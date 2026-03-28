@@ -19,7 +19,7 @@ namespace Kode\Http;
 class Kode
 {
     /** @var string 版本号 */
-    public const VERSION = '1.2.2';
+    public const VERSION = '1.3.0';
 
     /** @var array<string, mixed> 全局配置 */
     protected static array $config = [];
