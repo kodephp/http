@@ -1,0 +1,109 @@
+{
+    "name": "kode/http",
+    "description": "现代化、高性能的 PHP HTTP 服务端库，支持 PSR-7/PSR-15/PSR-17 标准，多运行时环境（Swoole、Workerman、FPM），深度集成 kode/process、kode/fibers、kode/parallel",
+    "keywords": [
+        "http",
+        "server",
+        "psr-7",
+        "psr-15",
+        "psr-17",
+        "swoole",
+        "workerman",
+        "fiber",
+        "coroutine",
+        "async",
+        "middleware",
+        "php8",
+        "php81",
+        "php82",
+        "php83",
+        "php84",
+        "php85",
+        "kode",
+        "kode-process",
+        "kode-fibers",
+        "kode-parallel"
+    ],
+    "homepage": "https://github.com/kodephp/http",
+    "license": "Apache-2.0",
+    "version": "1.1.0",
+    "authors": [
+        {
+            "name": "Kode Team",
+            "email": "382601296@qq.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/kodephp/http/issues",
+        "source": "https://github.com/kodephp/http",
+        "docs": "https://github.com/kodephp/http/blob/main/README.md"
+    },
+    "require": {
+        "php": "^8.1",
+        "kode/context": "^2.1",
+        "kode/exception": "^1.0",
+        "psr/http-message": "^1.0|^2.0",
+        "psr/http-server-handler": "^1.0",
+        "psr/http-server-middleware": "^1.0",
+        "psr/http-factory": "^1.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0|^11.0|^12.0",
+        "guzzlehttp/psr7": "^2.1",
+        "swoole/ide-helper": "^4.15|^5.0",
+        "symfony/var-dumper": "^6.0|^7.0"
+    },
+    "suggest": {
+        "ext-swoole": "用于 Swoole 协程支持和异步 HTTP 服务器",
+        "workerman/workerman": "用于 Workerman 多进程支持",
+        "kode/fibers": "用于 Fiber 协程调度和并发处理",
+        "kode/process": "用于进程池管理和 Worker 进程",
+        "kode/parallel": "用于并行任务执行和多线程支持",
+        "kode/runtime": "用于协程运行时抽象",
+        "guzzlehttp/psr7": "用于 PSR-7 消息实现参考"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kode\\Http\\": "src/"
+        },
+        "files": [
+            "src/functions.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Kode\\Http\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.2.x-dev"
+        },
+        "kode": {
+            "name": "Kode\\Http",
+            "description": "高性能 HTTP 服务端库，支持 PSR-7/PSR-15/PSR-17 和协程",
+            "category": "kode"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-html coverage",
+        "test-unit": "phpunit --testsuite Unit",
+        "lint": "php-cs-fixer fix --dry-run --diff",
+        "lint-fix": "php-cs-fixer fix"
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/kodephp/http"
+        }
+    ]
+}
