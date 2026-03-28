@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Integration;
 
-use Kode\Exception\BaseException;
-use Kode\Exception\RuntimeException;
+use Kode\Exception\KodeException;
 use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
@@ -266,7 +265,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
 
                         $elapsed = microtime(true) - $fiberStartTimes[$key];
                         if ($elapsed > $timeout) {
-                            throw new RuntimeException('Fiber 执行超时', 0, null, 'FIBER_TIMEOUT');
+                            throw KodeException::timeout('Fiber 执行超时');
                         }
                     }
 
@@ -295,8 +294,8 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
         $statusCode = 500;
         $errorCode = 'E1500';
 
-        if ($e instanceof BaseException) {
-            $statusCode = $e instanceof \Kode\Exception\HttpException ? $e->getHttpStatusCode() : 500;
+        if ($e instanceof KodeException) {
+            $statusCode = $e->getHttpStatusCode();
             $errorCode = $e->getErrorCode();
         }
 
@@ -309,7 +308,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
             ],
         ];
 
-        if ($e instanceof BaseException) {
+        if ($e instanceof KodeException) {
             $body['error']['trace_id'] = $e->getTraceId();
         }
 
