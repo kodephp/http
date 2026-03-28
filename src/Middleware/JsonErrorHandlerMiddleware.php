@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Kode\Http\Middleware;
 
-use Kode\Exception\KodeException;
+use Kode\Exception\BaseException;
+use Kode\Exception\HttpException as KodeHttpException;
 use Kode\Http\Exception\HttpException;
 use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
@@ -16,7 +17,7 @@ use Psr\Http\Server\MiddlewareInterface;
  * JSON 错误处理中间件
  *
  * 捕获所有异常并转换为统一的 JSON 格式响应
- * 支持 KodeException 和 HttpException 的错误码体系
+ * 支持 BaseException 和 HttpException 的错误码体系
  */
 class JsonErrorHandlerMiddleware implements MiddlewareInterface
 {
@@ -75,13 +76,17 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
         if ($e instanceof HttpException) {
             $statusCode = $e->getHttpStatusCode();
             $errorCode = $e->getErrorCode();
-            $message = $e->getErrorMsg();
+            $message = $e->getMessage();
             $errorType = 'http_error';
-        } elseif ($e instanceof KodeException) {
+        } elseif ($e instanceof KodeHttpException) {
             $statusCode = $e->getHttpStatusCode();
             $errorCode = $e->getErrorCode();
-            $message = $e->getErrorMsg();
-            $errorType = $e->getErrorType();
+            $message = $e->getMessage();
+            $errorType = 'http_error';
+        } elseif ($e instanceof BaseException) {
+            $message = $e->getMessage();
+            $errorCode = $e->getErrorCode();
+            $errorType = 'base_error';
         } elseif ($e instanceof \InvalidArgumentException) {
             $statusCode = 400;
             $errorCode = 'E1001';
@@ -102,7 +107,7 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
             ],
         ];
 
-        if ($e instanceof KodeException) {
+        if ($e instanceof BaseException) {
             $errorData['error']['trace_id'] = $e->getTraceId();
         }
 
