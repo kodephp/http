@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Integration;
 
+use Kode\Exception\KodeException;
 use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
@@ -273,7 +274,7 @@ class ParallelMiddleware implements MiddlewareInterface
 
         while (!$fiber->isTerminated()) {
             if (microtime(true) - $startTime > $timeout) {
-                throw new \RuntimeException('Task timeout');
+                throw KodeException::timeout('并行任务执行超时');
             }
             usleep(1000);
         }
@@ -314,16 +315,29 @@ class ParallelMiddleware implements MiddlewareInterface
      */
     private function handleError(\Throwable $e, float $startTime): Response
     {
+        $statusCode = 500;
+        $errorCode = 'E1500';
+
+        if ($e instanceof KodeException) {
+            $statusCode = $e->getHttpStatusCode();
+            $errorCode = $e->getErrorCode();
+        }
+
         $body = [
+            'success' => false,
             'error' => [
+                'code' => $errorCode,
                 'message' => $e->getMessage(),
-                'type' => basename(str_replace('\\', '/', get_class($e))),
-                'code' => 500,
+                'type' => 'parallel_error',
             ],
         ];
 
+        if ($e instanceof KodeException) {
+            $body['error']['trace_id'] = $e->getTraceId();
+        }
+
         $response = new Response(
-            500,
+            $statusCode,
             ['Content-Type' => 'application/json'],
             Stream::create(json_encode($body, JSON_UNESCAPED_UNICODE))
         );
