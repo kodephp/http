@@ -230,6 +230,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
     {
         $results = [];
         $fibers = [];
+        $fiberStartTimes = [];
 
         foreach ($tasks as $key => $task) {
             $fibers[$key] = new \Fiber(function () use ($task) {
@@ -245,11 +246,13 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
 
         $maxRetries = $this->config['max_retries'];
         $retryDelay = $this->config['retry_delay'];
+        $timeout = $this->config['timeout'];
 
         foreach ($fibers as $key => $fiber) {
             $attempt = 0;
             while ($attempt < $maxRetries) {
                 try {
+                    $fiberStartTimes[$key] = microtime(true);
                     $fiber->start();
                     $this->stats['fibers_created']++;
 
@@ -260,7 +263,8 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
                             usleep(1000);
                         }
 
-                        if (microtime(true) - ($fiber->getMetadata()['start_time'] ?? microtime(true)) > $this->config['timeout']) {
+                        $elapsed = microtime(true) - $fiberStartTimes[$key];
+                        if ($elapsed > $timeout) {
                             throw KodeException::timeout('Fiber 执行超时');
                         }
                     }
