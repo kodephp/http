@@ -17,6 +17,7 @@
 - **🧩 模块化中间件**：灵活的中间件管道，支持链式调用
 - **🔗 深度集成**：与 `kode/context`、`kode/process`、`kode/fibers`、`kode/parallel` 无缝协作
 - **🛡️ 企业级特性**：CORS、限流、错误处理、进程管理等开箱即用
+- **📦 简洁 API**：统一的 `Req`、`Res`、`App` 助手类，让开发更高效
 
 ## 环境要求
 
@@ -50,29 +51,147 @@ composer require kode/http
 
 require 'vendor/autoload.php';
 
-use Kode\Http\Server\ServerRunner;
-use Kode\Http\Psr7\Message\Response;
-use Kode\Http\Psr7\Stream;
+use Kode\Http\App;
+use Kode\Http\Req;
+use Kode\Http\Res;
 
-$runner = new ServerRunner();
+// 创建应用
+$app = App::create();
 
-$runner->run(function ($request) {
-    $path = $request->getUri()->getPath();
-    $method = $request->getMethod();
-
-    if ($path === '/hello' && $method === 'GET') {
-        return new Response(200, [
-            'Content-Type' => 'text/plain; charset=utf-8'
-        ], Stream::create('你好，世界！'));
-    }
-
-    return new Response(404, [
-        'Content-Type' => 'application/json; charset=utf-8'
-    ], Stream::create(json_encode(['error' => 'Not Found'])));
+// 注册路由
+$app->get('/api/hello', function($request) {
+    $name = Req::query($request, 'name', 'World');
+    return Res::success(['greeting' => "你好，{$name}！"]);
 });
+
+// 启动开发服务器
+$app->serve(8080);
 ```
 
 ## 核心组件
+
+### 统一请求响应助手
+
+#### Req - 请求解析
+
+```php
+use Kode\Http\Req;
+
+// 获取查询参数
+$params = Req::query($request);           // 获取所有
+$name = Req::query($request, 'name');     // 获取单个
+
+// 获取请求体参数
+$body = Req::body($request);
+$id = Req::body($request, 'id');
+
+// 获取 JSON 数据
+$json = Req::json($request);
+$email = Req::json($request, 'email');
+
+// 获取请求头
+$token = Req::header($request, 'Authorization');
+
+// 获取请求属性
+$userId = Req::attr($request, 'user_id');
+
+// 获取所有参数（合并 query + body）
+$all = Req::params($request);
+
+// 便捷判断
+$isAjax = Req::isAjax($request);
+$isJson = Req::isJson($request);
+$ip = Req::ip($request);
+```
+
+#### Res - 响应构建
+
+```php
+use Kode\Http\Res;
+
+// JSON 响应
+Res::json(['data' => 'value'])->send();
+Res::json(['data' => 'value'], 1)->send(); // 带业务码
+
+// 成功响应
+Res::success(['id' => 1], '操作成功')->send($request);
+Res::success(['user' => ['name' => '张三']])->send($request);
+
+// 失败响应
+Res::fail('用户名或密码错误', 'E1001')->send($request);
+
+// 错误响应
+Res::error(404, 'Not Found')->send($request);
+Res::error(500, 'Internal Server Error', 'E1500')->send($request);
+
+// 文本/HTML 响应
+Res::text('Hello World')->send();
+Res::html('<h1>Title</h1>')->send();
+
+// 重定向
+Res::redirect('/login')->send();
+
+// 链式调用
+Res::success(['data' => 'value'])
+    ->withHeader('Cache-Control', 'no-cache')
+    ->withCache(3600)
+    ->withSecurity()
+    ->send($request);
+```
+
+### App - 应用构建器
+
+```php
+use Kode\Http\App;
+use Kode\Http\Req;
+use Kode\Http\Res;
+
+// 创建应用
+$app = App::create(debug: true);
+
+// 添加中间件
+$app->use(function($req, $next) {
+    $start = microtime(true);
+    $response = $next->handle($req);
+    return $response->withHeader('X-Execution-Time', sprintf('%.2fms', (microtime(true) - $start) * 1000));
+});
+
+// 注册路由
+$app->get('/api/users', function($req) {
+    return Res::success(['users' => [
+        ['id' => 1, 'name' => '张三'],
+        ['id' => 2, 'name' => '李四'],
+    ]]);
+});
+
+$app->post('/api/users', function($req) {
+    $name = Req::json($req, 'name');
+    $email = Req::json($req, 'email');
+
+    if (empty($name)) {
+        return Res::fail('用户名不能为空', 'E1001', 400);
+    }
+
+    return Res::success(['id' => rand(1000, 9999)], '创建成功');
+});
+
+$app->get('/api/users/{id}', function($req) {
+    return Res::success(['id' => 1, 'name' => '张三']);
+});
+
+$app->delete('/api/users/{id}', function($req) {
+    return Res::success(null, '删除成功');
+});
+
+// 路由组
+$app->group('/api/v1', function($api) {
+    $api->get('/status', fn() => Res::success(['status' => 'ok']));
+    $api->post('/action', fn() => Res::success());
+});
+
+// 运行
+$app->serve(8080);
+```
 
 ### PSR-7 消息实现
 
@@ -91,11 +210,6 @@ $runner->run(function ($request) {
 | `MiddlewareDispatcher` | 核心中间件调度器，管理中间件栈并执行调度 |
 | `MiddlewarePipeline` | 管道实现，支持链式中间件调用 |
 | `CallableMiddleware` | 将可调用对象转换为中间件 |
-
-### 常用中间件
-
-| 中间件 | 说明 |
-|--------|------|
 | `CorsMiddleware` | CORS 跨域处理 |
 | `RateLimitMiddleware` | 请求限流 |
 | `JsonErrorHandlerMiddleware` | JSON 错误处理 |
@@ -157,7 +271,7 @@ $worker = new ProcessWorkerMiddleware(0, true, [
     ],
 ]);
 
-$pipeline->pipe($worker);
+$app->use($worker);
 ```
 
 ### 分布式 Fiber 协程（kode/fibers 集成）
@@ -177,13 +291,7 @@ $fiber = new FiberCoroutineMiddleware(10, 2048, [
     ],
 ]);
 
-$pipeline->pipe($fiber);
-
-// 设置并发任务
-$request = $request->withAttribute('_fiber_tasks', [
-    'task1' => fn() => heavyComputation(),
-    'task2' => fn() => anotherTask(),
-]);
+$app->use($fiber);
 ```
 
 ### 分布式并行处理（kode/parallel 集成）
@@ -203,77 +311,7 @@ $parallel = new ParallelMiddleware(10, [
     ],
 ]);
 
-$pipeline->pipe($parallel);
-
-// 设置并行任务
-$request = $request->withAttribute('_parallel_tasks', [
-    'fetchUser' => fn() => fetchUserFromDb(),
-    'fetchOrders' => fn() => fetchOrdersFromDb(),
-]);
-
-// 获取结果
-$results = $request->getAttribute('_parallel_results');
-```
-
-## 使用指南
-
-### 中间件管道
-
-```php
-use Kode\Http\Server\ServerRunner;
-use Kode\Http\Middleware\MiddlewarePipeline;
-use Kode\Http\Middleware\CallableMiddleware;
-use Kode\Http\Psr7\Message\Response;
-use Kode\Http\Psr7\Stream;
-
-$pipeline = new MiddlewarePipeline($finalHandler);
-
-$pipeline->pipe(new CallableMiddleware(function ($request, $handler) {
-    $start = microtime(true);
-    $response = $handler->handle($request);
-    $time = (microtime(true) - $start) * 1000;
-    return $response->withHeader('X-Execution-Time', sprintf('%.2fms', $time));
-}));
-
-$runner = new ServerRunner();
-$runner->run(fn($request) => $pipeline->handle($request));
-```
-
-### CORS 中间件
-
-```php
-use Kode\Http\Middleware\CorsMiddleware;
-
-$cors = new CorsMiddleware([
-    'origin' => '*',
-    'methods' => ['GET', 'POST', 'PUT', 'DELETE'],
-    'credentials' => true,
-]);
-
-$pipeline->pipe($cors);
-```
-
-### 限流中间件
-
-```php
-use Kode\Http\Middleware\RateLimitMiddleware;
-
-$rateLimit = new RateLimitMiddleware(maxRequests: 100, windowSeconds: 60);
-$pipeline->pipe($rateLimit);
-```
-
-### Swoole 服务器
-
-```php
-use Kode\Http\Server\SwooleServerAdapter;
-use Kode\Http\Psr7\Message\Response;
-use Kode\Http\Psr7\Stream;
-
-$adapter = new SwooleServerAdapter(function ($request) {
-    return new Response(200, [], Stream::create('Hello from Swoole!'));
-});
-
-$adapter->run('0.0.0.0', 8080);
+$app->use($parallel);
 ```
 
 ## 项目结构
@@ -283,7 +321,7 @@ src/
 ├── Psr7/                          # PSR-7 实现
 │   ├── Message/                   # 消息类
 │   ├── Factory/                   # PSR-17 工厂
-│   └── Trait/                     # 可复用 Trait
+│   └── Trait/                    # 可复用 Trait
 ├── Middleware/                    # PSR-15 中间件
 │   ├── MiddlewareInterface.php
 │   ├── MiddlewareDispatcher.php
@@ -298,8 +336,12 @@ src/
 │   ├── FiberCoroutineMiddleware.php
 │   └── ParallelMiddleware.php
 ├── Server/                       # 服务端适配器
-├── Exception/                   # 异常
-└── functions.php               # 辅助函数
+├── Exception/                    # 异常
+├── App.php                       # 应用构建器
+├── Req.php                       # 请求助手
+├── Res.php                       # 响应助手
+├── Kode.php                      # 框架入口
+└── functions.php                 # 辅助函数
 ```
 
 ## 测试
@@ -312,11 +354,6 @@ src/
 ./vendor/bin/phpunit --coverage-html coverage
 ```
 
-## 文档
-
-- [API 文档](docs/API.md) - 完整的 API 参考
-- [升级指南](docs/UPGRADE.md) - 从旧版本升级说明
-
 ## 与其他 Kode 包的关系
 
 ```
@@ -324,19 +361,21 @@ kode/http
     │
     ├── kode/context     # 请求上下文传递和管理
     │
-    ├── kode/runtime    # 协程运行时抽象
+    ├── kode/runtime     # 协程运行时抽象
     │
-    ├── kode/fibers     # Fiber 协程调度
+    ├── kode/fibers      # Fiber 协程调度
     │       │
     │       └── kode/parallel  # 并行任务处理
     │
-    └── kode/process    # 进程管理和 Worker
+    └── kode/process     # 进程管理和 Worker
             │
             └── kode/http-client  # HTTP 客户端（统一到 PSR-7 抽象）
 ```
 
 ## 版本历史
 
+- **v1.3.0** - 新增 App、Req、Res 统一 API，简化请求响应调用
+- **v1.2.0** - 适配 kode/exception ^2.0
 - **v1.1.0** - 深度集成 kode/process、kode/fibers、kode/parallel，新增分布式部署支持
 - **v1.0.0** - 初始版本，PSR-7/15/17 基础实现
 
