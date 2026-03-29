@@ -372,13 +372,6 @@ kode/http
             └── kode/http-client  # HTTP 客户端（统一到 PSR-7 抽象）
 ```
 
-## 版本历史
-
-- **v1.3.0** - 新增 App、Req、Res 统一 API，简化请求响应调用
-- **v1.2.0** - 适配 kode/exception ^2.0
-- **v1.1.0** - 深度集成 kode/process、kode/fibers、kode/parallel，新增分布式部署支持
-- **v1.0.0** - 初始版本，PSR-7/15/17 基础实现
-
 ## License
 
 Apache-2.0
