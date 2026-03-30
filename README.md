@@ -7,9 +7,12 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange)](LICENSE)
 
 > **Kode\Http** 是一个专为 PHP 8.1+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/process`、`kode/fibers`、`kode/parallel`，打造现代化全栈 PHP 应用。
+>
+> **设计理念**：借鉴 ThinkPHP/Laravel/webman 的简洁风格，提供 `Req`、`Res`、`App` 三大核心 API，让开发者无需心智负担即可快速构建高性能 HTTP 服务。
 
 ## 核心特性
 
+- **📦 简洁 API**：借鉴 webman/ThinkPHP/Laravel 设计，`Req`、`Res`、`App` 三剑客
 - **🎯 PSR-7/15/17 完全兼容**：标准化的 HTTP 消息、中间件和工厂实现
 - **⚡ 高性能协程支持**：无缝对接 Swoole/Workerman，支持 Fiber 协程
 - **🔄 多运行时适配**：自动检测并适配 FPM、CLI、Swoole、Workerman 环境
@@ -17,7 +20,6 @@
 - **🧩 模块化中间件**：灵活的中间件管道，支持链式调用
 - **🔗 深度集成**：与 `kode/context`、`kode/process`、`kode/fibers`、`kode/parallel` 无缝协作
 - **🛡️ 企业级特性**：CORS、限流、错误处理、进程管理等开箱即用
-- **📦 简洁 API**：统一的 `Req`、`Res`、`App` 助手类，让开发更高效
 
 ## 环境要求
 
@@ -55,88 +57,91 @@ use Kode\Http\App;
 use Kode\Http\Req;
 use Kode\Http\Res;
 
-// 创建应用
 $app = App::create();
 
-// 注册路由
-$app->get('/api/hello', function($request) {
-    $name = Req::query($request, 'name', 'World');
+$app->get('/api/hello', function() {
+    $name = Req::get('name', 'World');
     return Res::success(['greeting' => "你好，{$name}！"]);
 });
 
-// 启动开发服务器
 $app->serve(8080);
 ```
 
-## 核心组件
+## 核心 API
 
-### 统一请求响应助手
+### Req - 请求解析（借鉴 webman）
 
-#### Req - 请求解析
+**无需传入 request 参数，直接获取当前请求**
 
 ```php
-use Kode\Http\Req;
+// 参数获取（自动从当前请求获取）
+Req::get('name');           // GET 参数
+Req::post('name');          // POST 参数
+Req::json('name');          // JSON body 参数
+Req::header('Authorization'); // 请求头
+Req::cookie('session_id');  // Cookie
 
-// 获取查询参数
-$params = Req::query($request);           // 获取所有
-$name = Req::query($request, 'name');     // 获取单个
+// 字段选择（借鉴 Laravel）
+Req::only('name', 'email');           // 仅获取指定字段
+Req::except('password', 'token');     // 排除指定字段
 
-// 获取请求体参数
-$body = Req::body($request);
-$id = Req::body($request, 'id');
+// 判断存在（借鉴 ThinkPHP）
+Req::has('name');            // 参数是否存在
+Req::missing('token');       // 参数是否缺失
 
-// 获取 JSON 数据
-$json = Req::json($request);
-$email = Req::json($request, 'email');
+// 获取所有参数
+Req::all();                  // 合并 query + body
 
-// 获取请求头
-$token = Req::header($request, 'Authorization');
+// 请求信息
+Req::ip();                   // 客户端 IP
+Req::method();              // 请求方法
+Req::path();                // 请求路径
+Req::isAjax();              // 是否 AJAX 请求
+Req::isJson();              // 是否 JSON 请求
+Req::isMobile();            // 是否移动端
+Req::isGet();               // 是否 GET 请求
+Req::isPost();              // 是否 POST 请求
 
-// 获取请求属性
-$userId = Req::attr($request, 'user_id');
-
-// 获取所有参数（合并 query + body）
-$all = Req::params($request);
-
-// 便捷判断
-$isAjax = Req::isAjax($request);
-$isJson = Req::isJson($request);
-$ip = Req::ip($request);
+// 其他
+Req::userAgent();           // User-Agent
+Req::referer();             // 来源页面
+Req::language();            // Accept-Language
+Req::time();                // 请求时间戳
+Req::file('avatar');        // 上传文件
+Req::server('REQUEST_TIME'); // 服务器变量
 ```
 
-#### Res - 响应构建
+### Res - 响应构建（链式调用）
 
 ```php
-use Kode\Http\Res;
-
 // JSON 响应
-Res::json(['data' => 'value'])->send();
-Res::json(['data' => 'value'], 1)->send(); // 带业务码
+Res::json(['data' => 'value']);
+Res::json(['data' => 'value'], 1);  // 带业务码
 
-// 成功响应
-Res::success(['id' => 1], '操作成功')->send($request);
-Res::success(['user' => ['name' => '张三']])->send($request);
+// 业务响应（借鉴 Laravel）
+Res::success(['id' => 1], '操作成功');
+Res::fail('用户名或密码错误', 'E1001');
 
-// 失败响应
-Res::fail('用户名或密码错误', 'E1001')->send($request);
+// HTTP 错误
+Res::error(404, 'Not Found');
+Res::error(500, 'Internal Server Error', 'E1500');
 
-// 错误响应
-Res::error(404, 'Not Found')->send($request);
-Res::error(500, 'Internal Server Error', 'E1500')->send($request);
-
-// 文本/HTML 响应
-Res::text('Hello World')->send();
-Res::html('<h1>Title</h1>')->send();
-
-// 重定向
-Res::redirect('/login')->send();
+// 其他响应类型
+Res::text('Hello World');
+Res::html('<h1>Title</h1>');
+Res::xml('<root></root>');
+Res::empty();                // 204 空响应
+Res::redirect('/login');    // 302 重定向
+Res::download('/path/file.pdf');
 
 // 链式调用
-Res::success(['data' => 'value'])
-    ->withHeader('Cache-Control', 'no-cache')
+Res::success(['data' => $data])
+    ->status(201)
+    ->header('X-Custom', 'value')
+    ->withCors()
     ->withCache(3600)
     ->withSecurity()
-    ->send($request);
+    ->send();
 ```
 
 ### App - 应用构建器
@@ -146,7 +151,6 @@ use Kode\Http\App;
 use Kode\Http\Req;
 use Kode\Http\Res;
 
-// 创建应用
 $app = App::create(debug: true);
 
 // 添加中间件
@@ -156,17 +160,17 @@ $app->use(function($req, $next) {
     return $response->withHeader('X-Execution-Time', sprintf('%.2fms', (microtime(true) - $start) * 1000));
 });
 
-// 注册路由
-$app->get('/api/users', function($req) {
+// 路由注册
+$app->get('/api/users', function() {
     return Res::success(['users' => [
         ['id' => 1, 'name' => '张三'],
         ['id' => 2, 'name' => '李四'],
     ]]);
 });
 
-$app->post('/api/users', function($req) {
-    $name = Req::json($req, 'name');
-    $email = Req::json($req, 'email');
+$app->post('/api/users', function() {
+    $name = Req::json('name');
+    $email = Req::json('email');
 
     if (empty($name)) {
         return Res::fail('用户名不能为空', 'E1001', 400);
@@ -175,11 +179,13 @@ $app->post('/api/users', function($req) {
     return Res::success(['id' => rand(1000, 9999)], '创建成功');
 });
 
-$app->get('/api/users/{id}', function($req) {
-    return Res::success(['id' => 1, 'name' => '张三']);
+// 路由参数
+$app->get('/api/users/{id}', function() {
+    $id = Req::attr('id');
+    return Res::success(['id' => $id]);
 });
 
-$app->delete('/api/users/{id}', function($req) {
+$app->delete('/api/users/{id}', function() {
     return Res::success(null, '删除成功');
 });
 
@@ -189,11 +195,16 @@ $app->group('/api/v1', function($api) {
     $api->post('/action', fn() => Res::success());
 });
 
+// HTTP 方法
+$app->patch('/api/users/{id}', fn() => Res::success());
+$app->options('/api/users', fn() => Res::empty());
+$app->any('/api/health', fn() => Res::success());
+
 // 运行
 $app->serve(8080);
 ```
 
-### PSR-7 消息实现
+## PSR-7 消息实现
 
 | 类 | 说明 |
 |----|------|
@@ -203,7 +214,7 @@ $app->serve(8080);
 | `Stream` | 流式正文，支持读取、写入、定位等操作（自研实现） |
 | `Uri` | URI 实现，支持解析和构建 URI 各部分 |
 
-### PSR-15 中间件
+## PSR-15 中间件
 
 | 中间件 | 说明 |
 |--------|------|
@@ -214,7 +225,7 @@ $app->serve(8080);
 | `RateLimitMiddleware` | 请求限流 |
 | `JsonErrorHandlerMiddleware` | JSON 错误处理 |
 
-### 集成组件
+## 集成组件
 
 | 组件 | 说明 |
 |------|------|
@@ -238,14 +249,13 @@ use Kode\Http\Integration\ParallelMiddleware;
 ### 分布式配置
 
 ```php
-// 创建分布式配置
 $config = new DistributedConfig('node-1');
 $config->setEnabled(true);
 $config->setNodes([
     'node-1' => ['host' => '192.168.1.1', 'port' => 8080, 'weight' => 1],
     'node-2' => ['host' => '192.168.1.2', 'port' => 8080, 'weight' => 1],
 ]);
-$config->setLoadBalanceStrategy('round_robin'); // round_robin, least_load, random
+$config->setLoadBalanceStrategy('round_robin');
 $config->setCallTimeout(30.0);
 $config->setMaxRetries(3);
 ```
@@ -253,8 +263,6 @@ $config->setMaxRetries(3);
 ### 分布式 Worker（kode/process 集成）
 
 ```php
-use Kode\Http\Integration\ProcessWorkerMiddleware;
-
 $worker = new ProcessWorkerMiddleware(0, true, [
     'pool_size' => 4,
     'enable_stats' => true,
@@ -265,9 +273,6 @@ $worker = new ProcessWorkerMiddleware(0, true, [
             'worker-1' => ['host' => '192.168.1.1', 'port' => 8080],
             'worker-2' => ['host' => '192.168.1.2', 'port' => 8080],
         ],
-        'load_balance_strategy' => 'round_robin',
-        'call_timeout' => 30,
-        'max_retries' => 3,
     ],
 ]);
 
@@ -277,8 +282,6 @@ $app->use($worker);
 ### 分布式 Fiber 协程（kode/fibers 集成）
 
 ```php
-use Kode\Http\Integration\FiberCoroutineMiddleware;
-
 $fiber = new FiberCoroutineMiddleware(10, 2048, [
     'timeout' => 30,
     'distributed' => [
@@ -297,8 +300,6 @@ $app->use($fiber);
 ### 分布式并行处理（kode/parallel 集成）
 
 ```php
-use Kode\Http\Integration\ParallelMiddleware;
-
 $parallel = new ParallelMiddleware(10, [
     'distributed' => [
         'enabled' => true,
@@ -321,7 +322,7 @@ src/
 ├── Psr7/                          # PSR-7 实现
 │   ├── Message/                   # 消息类
 │   ├── Factory/                   # PSR-17 工厂
-│   └── Trait/                    # 可复用 Trait
+│   └── Trait/                     # 可复用 Trait
 ├── Middleware/                    # PSR-15 中间件
 │   ├── MiddlewareInterface.php
 │   ├── MiddlewareDispatcher.php
@@ -331,12 +332,12 @@ src/
 │   ├── RateLimitMiddleware.php
 │   └── JsonErrorHandlerMiddleware.php
 ├── Integration/                   # 集成组件
-│   ├── DistributedConfig.php       # 分布式配置
+│   ├── DistributedConfig.php
 │   ├── ProcessWorkerMiddleware.php
 │   ├── FiberCoroutineMiddleware.php
 │   └── ParallelMiddleware.php
 ├── Server/                       # 服务端适配器
-├── Exception/                    # 异常
+├── Exception/                     # 异常
 ├── App.php                       # 应用构建器
 ├── Req.php                       # 请求助手
 ├── Res.php                       # 响应助手
@@ -347,10 +348,7 @@ src/
 ## 测试
 
 ```bash
-# 运行所有测试
 ./vendor/bin/phpunit
-
-# 运行测试并生成覆盖率报告
 ./vendor/bin/phpunit --coverage-html coverage
 ```
 
@@ -371,6 +369,15 @@ kode/http
             │
             └── kode/http-client  # HTTP 客户端（统一到 PSR-7 抽象）
 ```
+
+## 版本历史
+
+- **v2.1.0** - 增强 App 应用构建器，支持路由参数提取
+- **v2.0.0** - 借鉴 ThinkPHP/Laravel/webman 重构 API
+- **v1.5.0** - 增强 Req 请求助手方法
+- **v1.4.0** - 新增 App、Req、Res 统一 API
+- **v1.3.0** - 适配 kode/exception ^2.0
+- **v1.0.0** - 初始版本，PSR-7/15/17 基础实现
 
 ## License
 
