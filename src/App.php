@@ -24,7 +24,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  *
  * // 注册路由
  * $app->get('/api/users', function($req) {
- *     return Res::success(['users' => ['name' => '张三']]);
+ *     return Response::success(['users' => ['name' => '张三']]);
  * });
  *
  * // 运行
@@ -205,7 +205,7 @@ class App implements RequestHandlerInterface
      */
     public function handle(ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
     {
-        Req::setRequest($request);
+        Request::setRequest($request);
 
         $method = $request->getMethod();
         $path = $request->getUri()->getPath();
@@ -241,15 +241,15 @@ class App implements RequestHandlerInterface
                     return $result;
                 }
                 if (is_array($result)) {
-                    return Res::json($result)->send();
+                    return Response::json($result)->send();
                 }
                 if (is_string($result)) {
-                    return Res::text($result)->send();
+                    return Response::text($result)->send();
                 }
                 if ($result === null) {
-                    return Res::empty()->send();
+                    return Response::empty()->send();
                 }
-                return Res::success($result)->send();
+                return Response::success($result)->send();
             };
             $handler = new CallableMiddleware($handler);
         } elseif (is_callable($handler)) {

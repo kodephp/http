@@ -15,26 +15,26 @@ use Psr\Http\Message\ServerRequestInterface;
  * @example
  * ```php
  * // 基础获取（类似 webman）
- * Req::get('name');           // GET 参数
- * Req::post('name');          // POST 参数
- * Req::json('name');          // JSON body 参数
+ * Request::get('name');           // GET 参数
+ * Request::post('name');          // POST 参数
+ * Request::json('name');          // JSON body 参数
  *
  * // 字段选择（类似 Laravel）
- * Req::only('name', 'email');          // 仅获取指定字段
- * Req::except('password', 'token');    // 排除指定字段
+ * Request::only('name', 'email');          // 仅获取指定字段
+ * Request::except('password', 'token');    // 排除指定字段
  *
  * // 判断存在
- * Req::has('name');           // 参数是否存在
- * Req::missing('token');      // 参数是否缺失
+ * Request::has('name');           // 参数是否存在
+ * Request::missing('token');      // 参数是否缺失
  *
  * // 便捷方法
- * Req::ip();                  // 客户端 IP
- * Req::isAjax();              // 是否 AJAX
+ * Request::ip();                  // 客户端 IP
+ * Request::isAjax();              // 是否 AJAX
  * ```
  */
-class Req
+class Request
 {
-    /** @var ServerRequestInterface|null 当前请求（线程局部存储） */
+    /** @var ServerRequestInterface|null 当前请求 */
     private static ?ServerRequestInterface $currentRequest = null;
 
     /**

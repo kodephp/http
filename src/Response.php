@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Kode\Http;
 
-use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
 
 /**
@@ -16,20 +15,20 @@ use Kode\Http\Psr7\Stream;
  * @example
  * ```php
  * // 最简使用
- * Res::json(['data' => 'value']);
- * Res::success(['id' => 1], '操作成功');
+ * Response::json(['data' => 'value']);
+ * Response::success(['id' => 1], '操作成功');
  *
  * // 链式调用
- * Res::success(['data' => $data])
+ * Response::success(['data' => $data])
  *     ->header('X-Custom', 'value')
  *     ->withCors()
  *     ->send();
  *
  * // 直接发送
- * Res::json(['code' => 0, 'data' => []])->send();
+ * Response::json(['code' => 0, 'data' => []])->send();
  * ```
  */
-class Res
+class Response
 {
     /** @var int HTTP 状态码 */
     protected int $statusCode = 200;
@@ -243,15 +242,15 @@ class Res
     /**
      * 转换为 PSR-7 Response
      */
-    public function toResponse(): Response
+    public function toResponse(): \Psr\Http\Message\ResponseInterface
     {
-        return new Response($this->statusCode, $this->headers, Stream::create($this->body));
+        return new \Kode\Http\Psr7\Message\Response($this->statusCode, $this->headers, Stream::create($this->body));
     }
 
     /**
      * 发送响应
      */
-    public function send(): Response
+    public function send(): \Psr\Http\Message\ResponseInterface
     {
         return $this->toResponse();
     }

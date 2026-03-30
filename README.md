@@ -8,11 +8,11 @@
 
 > **Kode\Http** 是一个专为 PHP 8.1+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/process`、`kode/fibers`、`kode/parallel`，打造现代化全栈 PHP 应用。
 >
-> **设计理念**：借鉴 ThinkPHP/Laravel/webman 的简洁风格，提供 `Req`、`Res`、`App` 三大核心 API，让开发者无需心智负担即可快速构建高性能 HTTP 服务。
+> **设计理念**：借鉴 ThinkPHP/Laravel/webman 的简洁风格，提供 `Request`、`Response`、`App` 三大核心 API，让开发者无需心智负担即可快速构建高性能 HTTP 服务。
 
 ## 核心特性
 
-- **📦 简洁 API**：借鉴 webman/ThinkPHP/Laravel 设计，`Req`、`Res`、`App` 三剑客
+- **📦 简洁 API**：`Request`、`Response`、`App` 三剑客
 - **🎯 PSR-7/15/17 完全兼容**：标准化的 HTTP 消息、中间件和工厂实现
 - **⚡ 高性能协程支持**：无缝对接 Swoole/Workerman，支持 Fiber 协程
 - **🔄 多运行时适配**：自动检测并适配 FPM、CLI、Swoole、Workerman 环境
@@ -54,14 +54,14 @@ composer require kode/http
 require 'vendor/autoload.php';
 
 use Kode\Http\App;
-use Kode\Http\Req;
-use Kode\Http\Res;
+use Kode\Http\Request;
+use Kode\Http\Response;
 
 $app = App::create();
 
 $app->get('/api/hello', function() {
-    $name = Req::get('name', 'World');
-    return Res::success(['greeting' => "你好，{$name}！"]);
+    $name = Request::get('name', 'World');
+    return Response::success(['greeting' => "你好，{$name}！"]);
 });
 
 $app->serve(8080);
@@ -69,73 +69,73 @@ $app->serve(8080);
 
 ## 核心 API
 
-### Req - 请求解析（借鉴 webman）
+### Request - 请求解析（借鉴 webman）
 
 **无需传入 request 参数，直接获取当前请求**
 
 ```php
 // 参数获取（自动从当前请求获取）
-Req::get('name');           // GET 参数
-Req::post('name');          // POST 参数
-Req::json('name');          // JSON body 参数
-Req::header('Authorization'); // 请求头
-Req::cookie('session_id');  // Cookie
+Request::get('name');           // GET 参数
+Request::post('name');          // POST 参数
+Request::json('name');          // JSON body 参数
+Request::header('Authorization'); // 请求头
+Request::cookie('session_id');  // Cookie
 
 // 字段选择（借鉴 Laravel）
-Req::only('name', 'email');           // 仅获取指定字段
-Req::except('password', 'token');     // 排除指定字段
+Request::only('name', 'email');           // 仅获取指定字段
+Request::except('password', 'token');     // 排除指定字段
 
 // 判断存在（借鉴 ThinkPHP）
-Req::has('name');            // 参数是否存在
-Req::missing('token');       // 参数是否缺失
+Request::has('name');            // 参数是否存在
+Request::missing('token');       // 参数是否缺失
 
 // 获取所有参数
-Req::all();                  // 合并 query + body
+Request::all();                  // 合并 query + body
 
 // 请求信息
-Req::ip();                   // 客户端 IP
-Req::method();              // 请求方法
-Req::path();                // 请求路径
-Req::isAjax();              // 是否 AJAX 请求
-Req::isJson();              // 是否 JSON 请求
-Req::isMobile();            // 是否移动端
-Req::isGet();               // 是否 GET 请求
-Req::isPost();              // 是否 POST 请求
+Request::ip();                   // 客户端 IP
+Request::method();              // 请求方法
+Request::path();                // 请求路径
+Request::isAjax();              // 是否 AJAX 请求
+Request::isJson();              // 是否 JSON 请求
+Request::isMobile();            // 是否移动端
+Request::isGet();               // 是否 GET 请求
+Request::isPost();              // 是否 POST 请求
 
 // 其他
-Req::userAgent();           // User-Agent
-Req::referer();             // 来源页面
-Req::language();            // Accept-Language
-Req::time();                // 请求时间戳
-Req::file('avatar');        // 上传文件
-Req::server('REQUEST_TIME'); // 服务器变量
+Request::userAgent();           // User-Agent
+Request::referer();             // 来源页面
+Request::language();            // Accept-Language
+Request::time();                // 请求时间戳
+Request::file('avatar');        // 上传文件
+Request::server('REQUEST_TIME'); // 服务器变量
 ```
 
-### Res - 响应构建（链式调用）
+### Response - 响应构建（链式调用）
 
 ```php
 // JSON 响应
-Res::json(['data' => 'value']);
-Res::json(['data' => 'value'], 1);  // 带业务码
+Response::json(['data' => 'value']);
+Response::json(['data' => 'value'], 1);  // 带业务码
 
 // 业务响应（借鉴 Laravel）
-Res::success(['id' => 1], '操作成功');
-Res::fail('用户名或密码错误', 'E1001');
+Response::success(['id' => 1], '操作成功');
+Response::fail('用户名或密码错误', 'E1001');
 
 // HTTP 错误
-Res::error(404, 'Not Found');
-Res::error(500, 'Internal Server Error', 'E1500');
+Response::error(404, 'Not Found');
+Response::error(500, 'Internal Server Error', 'E1500');
 
 // 其他响应类型
-Res::text('Hello World');
-Res::html('<h1>Title</h1>');
-Res::xml('<root></root>');
-Res::empty();                // 204 空响应
-Res::redirect('/login');    // 302 重定向
-Res::download('/path/file.pdf');
+Response::text('Hello World');
+Response::html('<h1>Title</h1>');
+Response::xml('<root></root>');
+Response::empty();                // 204 空响应
+Response::redirect('/login');    // 302 重定向
+Response::download('/path/file.pdf');
 
 // 链式调用
-Res::success(['data' => $data])
+Response::success(['data' => $data])
     ->status(201)
     ->header('X-Custom', 'value')
     ->withCors()
@@ -148,8 +148,8 @@ Res::success(['data' => $data])
 
 ```php
 use Kode\Http\App;
-use Kode\Http\Req;
-use Kode\Http\Res;
+use Kode\Http\Request;
+use Kode\Http\Response;
 
 $app = App::create(debug: true);
 
@@ -162,43 +162,43 @@ $app->use(function($req, $next) {
 
 // 路由注册
 $app->get('/api/users', function() {
-    return Res::success(['users' => [
+    return Response::success(['users' => [
         ['id' => 1, 'name' => '张三'],
         ['id' => 2, 'name' => '李四'],
     ]]);
 });
 
 $app->post('/api/users', function() {
-    $name = Req::json('name');
-    $email = Req::json('email');
+    $name = Request::json('name');
+    $email = Request::json('email');
 
     if (empty($name)) {
-        return Res::fail('用户名不能为空', 'E1001', 400);
+        return Response::fail('用户名不能为空', 'E1001', 400);
     }
 
-    return Res::success(['id' => rand(1000, 9999)], '创建成功');
+    return Response::success(['id' => rand(1000, 9999)], '创建成功');
 });
 
 // 路由参数
 $app->get('/api/users/{id}', function() {
-    $id = Req::attr('id');
-    return Res::success(['id' => $id]);
+    $id = Request::attr('id');
+    return Response::success(['id' => $id]);
 });
 
 $app->delete('/api/users/{id}', function() {
-    return Res::success(null, '删除成功');
+    return Response::success(null, '删除成功');
 });
 
 // 路由组
 $app->group('/api/v1', function($api) {
-    $api->get('/status', fn() => Res::success(['status' => 'ok']));
-    $api->post('/action', fn() => Res::success());
+    $api->get('/status', fn() => Response::success(['status' => 'ok']));
+    $api->post('/action', fn() => Response::success());
 });
 
 // HTTP 方法
-$app->patch('/api/users/{id}', fn() => Res::success());
-$app->options('/api/users', fn() => Res::empty());
-$app->any('/api/health', fn() => Res::success());
+$app->patch('/api/users/{id}', fn() => Response::success());
+$app->options('/api/users', fn() => Response::empty());
+$app->any('/api/health', fn() => Response::success());
 
 // 运行
 $app->serve(8080);
@@ -339,8 +339,8 @@ src/
 ├── Server/                       # 服务端适配器
 ├── Exception/                     # 异常
 ├── App.php                       # 应用构建器
-├── Req.php                       # 请求助手
-├── Res.php                       # 响应助手
+├── Request.php                   # 请求助手
+├── Response.php                  # 响应助手
 ├── Kode.php                      # 框架入口
 └── functions.php                 # 辅助函数
 ```
@@ -374,8 +374,8 @@ kode/http
 
 - **v2.1.0** - 增强 App 应用构建器，支持路由参数提取
 - **v2.0.0** - 借鉴 ThinkPHP/Laravel/webman 重构 API
-- **v1.5.0** - 增强 Req 请求助手方法
-- **v1.4.0** - 新增 App、Req、Res 统一 API
+- **v1.5.0** - 增强 Request 请求助手方法
+- **v1.4.0** - 新增 App、Request、Response 统一 API
 - **v1.3.0** - 适配 kode/exception ^2.0
 - **v1.0.0** - 初始版本，PSR-7/15/17 基础实现
 
