@@ -15,7 +15,7 @@ use Psr\Http\Server\RequestHandlerInterface;
 /**
  * HTTP 应用构建器
  *
- * 提供简洁标准的应用构建方式
+ * 提供简洁标准的应用构建方式，支持路由、中间件、请求处理
  *
  * @example
  * ```php
@@ -31,7 +31,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  * $app->run();
  * ```
  */
-class App
+class App implements RequestHandlerInterface
 {
     /** @var MiddlewareDispatcher 中间件调度器 */
     protected MiddlewareDispatcher $dispatcher;
@@ -55,12 +55,7 @@ class App
     {
         $app = new self();
         $app->debug = $debug;
-        $app->handler = new class implements RequestHandlerInterface {
-            public function handle(ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
-            {
-                throw HttpException::notFound($request, 'Route not found');
-            }
-        };
+        $app->handler = $app;
         $app->dispatcher = new MiddlewareDispatcher($app->handler);
         $app->dispatcher->pipe(new JsonErrorHandlerMiddleware($debug));
 
@@ -88,7 +83,7 @@ class App
     }
 
     /**
-     * 添加全局中间件
+     * 添加全局中间件（别名）
      */
     public function middleware($middleware): self
     {
@@ -128,15 +123,44 @@ class App
     }
 
     /**
-     * 注册路由
+     * 注册 PATCH 路由
      */
-    public function route(string $method, string $pattern, callable $handler): self
+    public function patch(string $pattern, callable $handler): self
     {
+        return $this->route('PATCH', $pattern, $handler);
+    }
+
+    /**
+     * 注册 OPTIONS 路由
+     */
+    public function options(string $pattern, callable $handler): self
+    {
+        return $this->route('OPTIONS', $pattern, $handler);
+    }
+
+    /**
+     * 注册任意方法路由
+     */
+    public function any(string $pattern, callable $handler): self
+    {
+        return $this->route(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], $pattern, $handler);
+    }
+
+    /**
+     * 注册路由
+     *
+     * @param string|array $method HTTP 方法或方法数组
+     */
+    public function route(string|array $method, string $pattern, callable $handler): self
+    {
+        $methods = is_array($method) ? array_map('strtoupper', $method) : [strtoupper($method)];
+
         $this->routes[] = [
-            'method' => strtoupper($method),
+            'methods' => $methods,
             'pattern' => $pattern,
             'handler' => $handler,
         ];
+
         return $this;
     }
 
@@ -145,60 +169,60 @@ class App
      */
     public function group(string $prefix, callable $callback, array $middlewares = []): self
     {
-        $app = new self();
-        $app->routes = &$this->routes;
-        $app->dispatcher = $this->dispatcher;
+        $originalRoutes = $this->routes;
+        $this->routes = [];
 
-        foreach ($middlewares as $middleware) {
-            $app->use($middleware);
+        $callback($this);
+
+        $prefixedRoutes = [];
+        foreach ($this->routes as $route) {
+            $route['pattern'] = rtrim($prefix, '/') . '/' . ltrim($route['pattern'], '/');
+            $prefixedRoutes[] = $route;
         }
 
-        $callback($app);
+        $this->routes = $originalRoutes;
+
+        foreach ($middlewares as $middleware) {
+            if (is_callable($middleware)) {
+                $middleware = new CallableMiddleware($middleware);
+            }
+            array_unshift($prefixedRoutes, ['_middleware' => $middleware]);
+        }
+
+        foreach ($prefixedRoutes as $route) {
+            if (isset($route['_middleware'])) {
+                $this->use($route['_middleware']);
+            } else {
+                $this->routes[] = $route;
+            }
+        }
 
         return $this;
     }
 
     /**
-     * 处理请求
+     * 处理请求（实现 RequestHandlerInterface）
      */
     public function handle(ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
     {
+        Req::setRequest($request);
+
         $method = $request->getMethod();
         $path = $request->getUri()->getPath();
 
         foreach ($this->routes as $route) {
-            if ($route['method'] !== $method) {
+            if (!isset($route['methods']) || !isset($route['pattern'])) {
                 continue;
             }
 
-            if ($this->matchPath($route['pattern'], $path)) {
-                $handler = $route['handler'];
+            if (!in_array($method, $route['methods'], true)) {
+                continue;
+            }
 
-                if ($handler instanceof \Closure) {
-                    $handler = new CallableMiddleware(function($req) use ($handler) {
-                        $result = $handler($req);
-                        if ($result instanceof \Psr\Http\Message\ResponseInterface) {
-                            return $result;
-                        }
-                        if (is_array($result)) {
-                            return Res::json($result)->send($req);
-                        }
-                        if (is_string($result)) {
-                            return Res::text($result)->send($req);
-                        }
-                        return Res::success($result)->send($req);
-                    });
-                } else {
-                    $handler = new CallableMiddleware($handler);
-                }
-
-                $pipeline = new MiddlewarePipeline($this->handler);
-                foreach ($this->globalMiddlewares as $middleware) {
-                    $pipeline->pipe($middleware);
-                }
-                $pipeline->pipe($handler);
-
-                return $pipeline->handle($request);
+            $params = $this->matchPath($route['pattern'], $path);
+            if ($params !== false) {
+                $request = $request->withAttributes($params);
+                return $this->executeHandler($route['handler'], $request);
             }
         }
 
@@ -206,13 +230,60 @@ class App
     }
 
     /**
-     * 匹配路径
+     * 执行处理器
      */
-    protected function matchPath(string $pattern, string $path): bool
+    protected function executeHandler(callable $handler, ServerRequestInterface $request): \Psr\Http\Message\ResponseInterface
     {
-        $pattern = preg_replace('/\{[^}]+\}/', '([^/]+)', $pattern);
+        if ($handler instanceof \Closure) {
+            $handler = function($req) use ($handler) {
+                $result = $handler($req);
+                if ($result instanceof \Psr\Http\Message\ResponseInterface) {
+                    return $result;
+                }
+                if (is_array($result)) {
+                    return Res::json($result)->send();
+                }
+                if (is_string($result)) {
+                    return Res::text($result)->send();
+                }
+                if ($result === null) {
+                    return Res::empty()->send();
+                }
+                return Res::success($result)->send();
+            };
+            $handler = new CallableMiddleware($handler);
+        } elseif (is_callable($handler)) {
+            $handler = new CallableMiddleware($handler);
+        }
+
+        $pipeline = new MiddlewarePipeline($this->handler);
+        foreach ($this->globalMiddlewares as $middleware) {
+            $pipeline->pipe($middleware);
+        }
+        $pipeline->pipe($handler);
+
+        return $pipeline->handle($request);
+    }
+
+    /**
+     * 匹配路径并提取参数
+     */
+    protected function matchPath(string $pattern, string $path): array|false
+    {
+        $pattern = preg_replace('/\{([^}]+)\}/', '(?P<$1>[^/]+)', $pattern);
         $pattern = '#^' . $pattern . '$#';
-        return (bool) preg_match($pattern, $path);
+
+        if (preg_match($pattern, $path, $matches)) {
+            $params = [];
+            foreach ($matches as $key => $value) {
+                if (is_string($key)) {
+                    $params[$key] = $value;
+                }
+            }
+            return $params;
+        }
+
+        return false;
     }
 
     /**
@@ -244,12 +315,7 @@ class App
 
         stream_set_blocking($server, false);
 
-        $app->use(function($req) {
-            return Res::success(['msg' => 'Kode\Http is running']);
-        });
-
         while ($client = @stream_socket_accept($server, 5)) {
-            $request = '';
             $headers = '';
 
             while (($line = fgets($client)) !== false) {
@@ -265,11 +331,10 @@ class App
             preg_match('/Host:\s+([^\r\n]+)/', $headers, $matches);
             $hostHeader = $matches[1] ?? "localhost:{$port}";
 
-            $request = "GET {$path} HTTP/1.1\r\nHost: {$hostHeader}\r\n\r\n";
-
             $factory = new \Kode\Http\Psr7\Factory\ServerRequestFactory();
             $psrRequest = $factory->createServerRequest('GET', $path)
-                ->withAttribute('client_ip', '127.0.0.1');
+                ->withAttribute('client_ip', '127.0.0.1')
+                ->withAttribute('request_time', microtime(true));
 
             $response = $app->handle($psrRequest);
 
