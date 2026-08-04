@@ -2,11 +2,11 @@
 
 ## 现代化、高性能的 PHP HTTP 服务端库
 
-[![PHP Version](https://img.shields.io/badge/PHP-%5E8.1-blue)](https://www.php.net/)
+[![PHP Version](https://img.shields.io/badge/PHP-%5E8.3-blue)](https://www.php.net/)
 [![PSR-7/15/17](https://img.shields.io/badge/PSR-7%2F15%2F17-brightgreen)](https://www.php-fig.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange)](LICENSE)
 
-> **Kode\Http** 是一个专为 PHP 8.1+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/process`、`kode/fibers`、`kode/parallel`，打造现代化全栈 PHP 应用。
+> **Kode\Http** 是一个专为 PHP 8.3+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/context`、`kode/process`、`kode/fibers`、`kode/parallel`，打造现代化全栈 PHP 应用。
 >
 > **设计理念**：借鉴 ThinkPHP/Laravel/webman 的简洁风格，提供 `Request`、`Response`、`App` 三大核心 API，让开发者无需心智负担即可快速构建高性能 HTTP 服务。
 
@@ -25,7 +25,7 @@
 
 | 环境 | 版本要求 |
 |------|----------|
-| PHP | >= 8.1 |
+| PHP | >= 8.3 |
 | PSR-7 | ^1.0 或 ^2.0 |
 | PSR-15 | ^1.0 |
 | PSR-17 | ^1.0 |
@@ -181,7 +181,7 @@ $app->post('/api/users', function() {
 
 // 路由参数
 $app->get('/api/users/{id}', function() {
-    $id = Request::attr('id');
+    $id = Request::param('id');   // 路由参数（等价 Request::attr('id')）
     return Response::success(['id' => $id]);
 });
 
@@ -216,14 +216,23 @@ $app->serve(8080);
 
 ## PSR-15 中间件
 
+> v3.0 起中间件管道为**无状态、可重入**实现（`MiddlewarePipeline` + `PipelineRunner`），
+> 同一实例可在 Swoole 协程 / Fiber 并发环境下安全复用，不再持有请求级可变索引。
+
 | 中间件 | 说明 |
 |--------|------|
 | `MiddlewareDispatcher` | 核心中间件调度器，管理中间件栈并执行调度 |
-| `MiddlewarePipeline` | 管道实现，支持链式中间件调用 |
+| `MiddlewarePipeline` | 无状态管道实现，支持链式中间件调用 |
+| `PipelineRunner` | 每次 dispatch 创建独立执行游标（可重入） |
 | `CallableMiddleware` | 将可调用对象转换为中间件 |
 | `CorsMiddleware` | CORS 跨域处理 |
 | `RateLimitMiddleware` | 请求限流 |
 | `JsonErrorHandlerMiddleware` | JSON 错误处理 |
+| `BodyParser` | 自动解析 JSON / 表单 / XML 请求体（PHP 8.3 `json_validate`） |
+| `RequestId` | 生成 / 复用请求 ID（`X-Request-Id`），便于链路追踪 |
+| `ResponseTime` | 注入 `X-Response-Time` 响应耗时头（`hrtime` 纳秒计时） |
+| `Compression` | 按 `Accept-Encoding` 协商 gzip / deflate 压缩响应体 |
+| `SecurityHeaders` | 注入 X-Content-Type-Options / X-Frame-Options / Referrer-Policy 等安全头 |
 
 ## 集成组件
 
@@ -320,17 +329,31 @@ $app->use($parallel);
 ```
 src/
 ├── Psr7/                          # PSR-7 实现
-│   ├── Message/                   # 消息类
-│   ├── Factory/                   # PSR-17 工厂
-│   └── Trait/                     # 可复用 Trait
+│   ├── Message/                   # 消息类（Request/Response/ServerRequest）
+│   ├── Factory/                   # PSR-17 工厂（含 Psr17Factory 聚合工厂）
+│   ├── Trait/                     # 可复用 Trait（RequestTrait/ResponseTrait）
+│   ├── Stream.php                 # 自研流实现
+│   ├── Uri.php                    # URI 实现
+│   └── UploadedFile.php           # PSR-7 上传文件
+├── Routing/                       # 路由子系统
+│   ├── Router.php                 # 静态哈希 + 动态正则两级匹配，区分 404/405
+│   ├── Route.php                  # 路由定义（参数约束 / 可选参数 / 命名）
+│   ├── RouteResult.php            # 匹配结果（FOUND/NOT_FOUND/METHOD_NOT_ALLOWED）
+│   └── RouteRunner.php            # 路由执行器（最终处理器，参数注入 + 返回值归一化）
 ├── Middleware/                    # PSR-15 中间件
 │   ├── MiddlewareInterface.php
 │   ├── MiddlewareDispatcher.php
 │   ├── MiddlewarePipeline.php
+│   ├── PipelineRunner.php         # 无状态可重入执行游标
 │   ├── CallableMiddleware.php
 │   ├── CorsMiddleware.php
 │   ├── RateLimitMiddleware.php
-│   └── JsonErrorHandlerMiddleware.php
+│   ├── JsonErrorHandlerMiddleware.php
+│   ├── BodyParser.php             # 请求体解析
+│   ├── RequestId.php              # 请求 ID
+│   ├── ResponseTime.php           # 响应耗时
+│   ├── Compression.php            # 响应压缩
+│   └── SecurityHeaders.php        # 安全响应头
 ├── Integration/                   # 集成组件
 │   ├── DistributedConfig.php
 │   ├── ProcessWorkerMiddleware.php
@@ -339,10 +362,13 @@ src/
 ├── Server/                       # 服务端适配器
 ├── Exception/                     # 异常
 ├── App.php                       # 应用构建器
-├── Request.php                   # 请求助手
-├── Response.php                  # 响应助手
+├── Request.php                   # 请求助手（kode/context 隔离）
+├── Response.php                  # 响应助手（链式 + 返回值归一化）
+├── Emitter.php                   # PSR-7 响应发射器（分块输出）
+├── Status.php                    # HTTP 状态码枚举（类型安全 + 原因短语）
+├── Method.php                    # HTTP 方法枚举（ROUTABLE/isSafe/isIdempotent）
 ├── Kode.php                      # 框架入口
-└── functions.php                 # 辅助函数
+└── functions.php                 # 辅助函数（指向 Psr17Factory）
 ```
 
 ## 测试
@@ -372,6 +398,7 @@ kode/http
 
 ## 版本历史
 
+- **v3.0.0** - PHP 8.3+ 最低支持；重写路由器（静态哈希 + 动态正则、区分 404/405、命名路由 URL 生成）、无状态可重入中间件管道；新增 `Status`/`Method` 枚举、`Emitter`、BodyParser/RequestId/ResponseTime/Compression/SecurityHeaders 中间件；修复 PSR-7 大小写不敏感头查找告警
 - **v2.1.0** - 增强 App 应用构建器，支持路由参数提取
 - **v2.0.0** - 借鉴 ThinkPHP/Laravel/webman 重构 API
 - **v1.5.0** - 增强 Request 请求助手方法

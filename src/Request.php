@@ -4,45 +4,60 @@ declare(strict_types=1);
 
 namespace Kode\Http;
 
+use Kode\Context\Context;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\UploadedFileInterface;
 
 /**
  * 统一请求解析助手
  *
- * 借鉴 ThinkPHP/Laravel/webman 的简洁设计，提供无心智负担的请求解析方法
- * 完全兼容 PSR-7 标准
+ * 借鉴 ThinkPHP/Laravel/webman 的简洁设计，提供无心智负担的请求解析方法，
+ * 完全兼容 PSR-7。
+ *
+ * v3.0 关键改进：
+ * - 当前请求存放在 kode/context 上下文中，Swoole 协程 / Fiber 并发下互不串号；
+ * - 修复 ip() 因 getHeaderLine() 返回空串导致 `??` 短路失效的问题；
+ * - 新增 input()/integer()/boolean() 等类型安全取值与 bearerToken()、fullUrl() 等便捷方法。
  *
  * @example
  * ```php
- * // 基础获取（类似 webman）
- * Request::get('name');           // GET 参数
- * Request::post('name');          // POST 参数
- * Request::json('name');          // JSON body 参数
- *
- * // 字段选择（类似 Laravel）
- * Request::only('name', 'email');          // 仅获取指定字段
- * Request::except('password', 'token');    // 排除指定字段
- *
- * // 判断存在
- * Request::has('name');           // 参数是否存在
- * Request::missing('token');      // 参数是否缺失
- *
- * // 便捷方法
- * Request::ip();                  // 客户端 IP
- * Request::isAjax();              // 是否 AJAX
+ * Request::get('name');                 // GET 参数
+ * Request::post('name');                // POST 参数
+ * Request::input('page', 1);            // query + body + json 合并取值
+ * Request::integer('page', 1);          // 强类型取值
+ * Request::only('name', 'email');       // 字段筛选
+ * Request::bearerToken();               // Authorization: Bearer xxx
+ * Request::ip();                        // 客户端 IP（含代理头解析）
  * ```
  */
 class Request
 {
-    /** @var ServerRequestInterface|null 当前请求 */
-    private static ?ServerRequestInterface $currentRequest = null;
+    /** @var string 上下文存储键 */
+    private const string CONTEXT_KEY = '__kode_http_request';
+
+    /** @var ServerRequestInterface|null 无上下文组件时的回退存储 */
+    private static ?ServerRequestInterface $fallback = null;
+
+    /** @var list<string> 代理来源 IP 头，按优先级排列 */
+    public const array IP_HEADERS = [
+        'X-Forwarded-For',
+        'X-Real-IP',
+        'CF-Connecting-IP',
+        'True-Client-IP',
+        'Client-IP',
+    ];
 
     /**
-     * 设置当前请求（通常由中间件或服务端适配器调用）
+     * 设置当前请求（由服务端适配器或中间件调用）
      */
     public static function setRequest(ServerRequestInterface $request): void
     {
-        self::$currentRequest = $request;
+        if (class_exists(Context::class)) {
+            Context::set(self::CONTEXT_KEY, $request);
+            return;
+        }
+
+        self::$fallback = $request;
     }
 
     /**
@@ -50,77 +65,179 @@ class Request
      */
     public static function getRequest(): ?ServerRequestInterface
     {
-        return self::$currentRequest;
+        if (class_exists(Context::class)) {
+            $request = Context::get(self::CONTEXT_KEY);
+            return $request instanceof ServerRequestInterface ? $request : null;
+        }
+
+        return self::$fallback;
     }
 
     /**
-     * 获取 GET 参数（等价于 query）
+     * 清除当前请求（请求结束时调用，避免长驻进程内存泄漏）
+     */
+    public static function clear(): void
+    {
+        if (class_exists(Context::class)) {
+            Context::delete(self::CONTEXT_KEY);
+        }
+
+        self::$fallback = null;
+    }
+
+    /**
+     * 判断参数是否存在且非空（兼容 v2 语义）
+     */
+    public static function has(string $key): bool
+    {
+        return self::filled($key);
+    }
+
+    /**
+     * 是否已绑定当前请求
+     */
+    public static function bound(): bool
+    {
+        return self::getRequest() !== null;
+    }
+
+    /**
+     * 获取 GET 查询参数
      */
     public static function get(?string $key = null, mixed $default = null): mixed
     {
         $request = self::getRequest();
-        if (!$request) {
-            return $default;
+        if ($request === null) {
+            return $key === null ? [] : $default;
         }
+
         $params = $request->getQueryParams();
-        if ($key === null) {
-            return $params;
-        }
-        return $params[$key] ?? $default;
+
+        return $key === null ? $params : ($params[$key] ?? $default);
     }
 
     /**
-     * 获取 POST 参数
+     * 获取 POST / 表单参数
      */
     public static function post(?string $key = null, mixed $default = null): mixed
     {
-        $request = self::getRequest();
-        if (!$request) {
-            return $default;
-        }
-        $params = $request->getParsedBody() ?? [];
-        if ($key === null) {
-            return $params;
-        }
-        return $params[$key] ?? $default;
+        $params = self::parsedBody();
+
+        return $key === null ? $params : ($params[$key] ?? $default);
     }
 
     /**
-     * 获取 JSON 参数（从 request body 解析）
+     * 获取 JSON body 参数
      */
     public static function json(?string $key = null, mixed $default = null): mixed
     {
         $request = self::getRequest();
-        if (!$request) {
-            return $default;
+        if ($request === null) {
+            return $key === null ? [] : $default;
         }
+
         $data = $request->getAttribute('_parsed_json');
-        if ($data === null) {
+
+        if (!is_array($data)) {
             $body = (string) $request->getBody();
-            $data = !empty($body) ? (json_decode($body, true) ?? []) : [];
-            $request = $request->withAttribute('_parsed_json', $data);
-            self::setRequest($request);
+            $data = ($body !== '' && json_validate($body)) ? (array) json_decode($body, true) : [];
+            self::setRequest($request->withAttribute('_parsed_json', $data));
         }
-        if ($key === null) {
-            return $data;
-        }
-        return $data[$key] ?? $default;
+
+        return $key === null ? $data : ($data[$key] ?? $default);
     }
 
     /**
-     * 获取所有参数（merge query + body）
+     * 合并取值：query < parsedBody < json
+     */
+    public static function input(?string $key = null, mixed $default = null): mixed
+    {
+        $data = self::all();
+
+        return $key === null ? $data : ($data[$key] ?? $default);
+    }
+
+    /**
+     * 获取全部参数（query + body + json 合并）
+     *
+     * @return array<string, mixed>
      */
     public static function all(): array
     {
         $request = self::getRequest();
-        if (!$request) {
+        if ($request === null) {
             return [];
         }
-        return array_merge($request->getQueryParams(), $request->getParsedBody() ?? []);
+
+        $merged = array_merge($request->getQueryParams(), self::parsedBody());
+
+        $json = self::json();
+        if (is_array($json) && $json !== []) {
+            $merged = array_merge($merged, $json);
+        }
+
+        return $merged;
+    }
+
+    /**
+     * 取整型值
+     */
+    public static function integer(string $key, int $default = 0): int
+    {
+        $value = self::input($key);
+
+        return is_numeric($value) ? (int) $value : $default;
+    }
+
+    /**
+     * 取浮点值
+     */
+    public static function float(string $key, float $default = 0.0): float
+    {
+        $value = self::input($key);
+
+        return is_numeric($value) ? (float) $value : $default;
+    }
+
+    /**
+     * 取布尔值（支持 "1"/"true"/"yes"/"on"）
+     */
+    public static function boolean(string $key, bool $default = false): bool
+    {
+        $value = self::input($key);
+        if ($value === null) {
+            return $default;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? $default;
+    }
+
+    /**
+     * 取字符串值（自动 trim）
+     */
+    public static function string(string $key, string $default = ''): string
+    {
+        $value = self::input($key);
+
+        return is_scalar($value) ? trim((string) $value) : $default;
+    }
+
+    /**
+     * 取数组值
+     *
+     * @return array<mixed>
+     */
+    public static function array(string $key, array $default = []): array
+    {
+        $value = self::input($key);
+
+        return is_array($value) ? $value : $default;
     }
 
     /**
      * 仅获取指定字段
+     *
+     * @return array<string, mixed>
      */
     public static function only(string ...$keys): array
     {
@@ -131,11 +248,14 @@ class Request
                 $result[$key] = $data[$key];
             }
         }
+
         return $result;
     }
 
     /**
      * 排除指定字段
+     *
+     * @return array<string, mixed>
      */
     public static function except(string ...$keys): array
     {
@@ -143,16 +263,26 @@ class Request
         foreach ($keys as $key) {
             unset($data[$key]);
         }
+
         return $data;
     }
 
     /**
-     * 判断参数是否存在
+     * 判断参数是否存在且非空字符串
      */
-    public static function has(string $key): bool
+    public static function filled(string $key): bool
     {
         $data = self::all();
-        return isset($data[$key]) && $data[$key] !== '';
+
+        return isset($data[$key]) && $data[$key] !== '' && $data[$key] !== [];
+    }
+
+    /**
+     * 判断参数键是否存在（允许空值）
+     */
+    public static function exists(string $key): bool
+    {
+        return array_key_exists($key, self::all());
     }
 
     /**
@@ -160,7 +290,7 @@ class Request
      */
     public static function missing(string $key): bool
     {
-        return !self::has($key);
+        return !self::filled($key);
     }
 
     /**
@@ -169,10 +299,40 @@ class Request
     public static function header(string $name, ?string $default = null): ?string
     {
         $request = self::getRequest();
-        if (!$request) {
+        if ($request === null) {
             return $default;
         }
-        return $request->getHeaderLine($name) ?: $default;
+
+        $value = $request->getHeaderLine($name);
+
+        return $value !== '' ? $value : $default;
+    }
+
+    /**
+     * 获取全部请求头
+     *
+     * @return array<string, list<string>>
+     */
+    public static function headers(): array
+    {
+        return self::getRequest()?->getHeaders() ?? [];
+    }
+
+    /**
+     * 获取 Bearer Token
+     */
+    public static function bearerToken(): ?string
+    {
+        $authorization = self::header('Authorization', '');
+        if ($authorization === null || $authorization === '') {
+            return null;
+        }
+
+        if (preg_match('/^Bearer\s+(.+)$/i', $authorization, $matches) === 1) {
+            return trim($matches[1]);
+        }
+
+        return null;
     }
 
     /**
@@ -180,11 +340,17 @@ class Request
      */
     public static function attr(string $name, mixed $default = null): mixed
     {
-        $request = self::getRequest();
-        if (!$request) {
-            return $default;
-        }
-        return $request->getAttribute($name, $default);
+        return self::getRequest()?->getAttribute($name, $default) ?? $default;
+    }
+
+    /**
+     * 获取路由参数
+     */
+    public static function param(string $name, mixed $default = null): mixed
+    {
+        $params = self::attr('_route_params', []);
+
+        return is_array($params) ? ($params[$name] ?? $default) : $default;
     }
 
     /**
@@ -192,8 +358,7 @@ class Request
      */
     public static function method(): string
     {
-        $request = self::getRequest();
-        return $request ? $request->getMethod() : 'GET';
+        return strtoupper(self::getRequest()?->getMethod() ?? 'GET');
     }
 
     /**
@@ -201,126 +366,228 @@ class Request
      */
     public static function path(): string
     {
-        $request = self::getRequest();
-        return $request ? $request->getUri()->getPath() : '/';
+        return self::getRequest()?->getUri()->getPath() ?: '/';
     }
 
     /**
-     * 获取完整 URI
+     * 获取完整 URI 字符串
      */
     public static function uri(): string
     {
         $request = self::getRequest();
-        return $request ? (string) $request->getUri() : '/';
+
+        return $request !== null ? (string) $request->getUri() : '/';
+    }
+
+    /**
+     * 获取不含查询串的完整 URL
+     */
+    public static function url(): string
+    {
+        $request = self::getRequest();
+        if ($request === null) {
+            return '/';
+        }
+
+        return (string) $request->getUri()->withQuery('')->withFragment('');
+    }
+
+    /**
+     * 获取含查询串的完整 URL
+     */
+    public static function fullUrl(): string
+    {
+        return self::uri();
+    }
+
+    /**
+     * 获取协议（http / https）
+     */
+    public static function scheme(): string
+    {
+        $request = self::getRequest();
+        if ($request === null) {
+            return 'http';
+        }
+
+        $proto = $request->getHeaderLine('X-Forwarded-Proto');
+        if ($proto !== '') {
+            return strtolower(explode(',', $proto)[0]);
+        }
+
+        return $request->getUri()->getScheme() ?: 'http';
+    }
+
+    /**
+     * 是否为 HTTPS 请求
+     */
+    public static function isSecure(): bool
+    {
+        return self::scheme() === 'https';
+    }
+
+    /**
+     * 获取主机名
+     */
+    public static function host(): string
+    {
+        return self::getRequest()?->getUri()->getHost() ?? '';
+    }
+
+    /**
+     * 获取端口
+     */
+    public static function port(): ?int
+    {
+        return self::getRequest()?->getUri()->getPort();
     }
 
     /**
      * 获取客户端 IP
+     *
+     * 依次尝试：显式设置的 client_ip 属性 → 常见代理头 → REMOTE_ADDR。
+     *
+     * @param bool $trustProxy 是否信任代理头，生产环境应在网关侧收敛后再开启
      */
-    public static function ip(): ?string
+    public static function ip(bool $trustProxy = true): ?string
     {
         $request = self::getRequest();
-        if (!$request) {
+        if ($request === null) {
             return null;
         }
-        return $request->getAttribute('client_ip')
-            ?? $request->getHeaderLine('X-Forwarded-For')
-            ?? $request->getHeaderLine('X-Real-IP')
-            ?? null;
+
+        $attribute = $request->getAttribute('client_ip');
+        if (is_string($attribute) && $attribute !== '') {
+            return $attribute;
+        }
+
+        if ($trustProxy) {
+            foreach (self::IP_HEADERS as $header) {
+                $value = $request->getHeaderLine($header);
+                if ($value === '') {
+                    continue;
+                }
+                $ip = trim(explode(',', $value)[0]);
+                if (filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+                    return $ip;
+                }
+            }
+        }
+
+        $remote = $request->getServerParams()['REMOTE_ADDR'] ?? null;
+
+        return is_string($remote) && $remote !== '' ? $remote : null;
     }
 
     /**
-     * 检查是否是 AJAX 请求
+     * 是否为 AJAX 请求
      */
     public static function isAjax(): bool
     {
-        $request = self::getRequest();
-        if (!$request) {
-            return false;
-        }
-        return strtolower($request->getHeaderLine('X-Requested-With') ?? '') === 'xmlhttprequest';
+        return strtolower(self::header('X-Requested-With', '') ?? '') === 'xmlhttprequest';
     }
 
     /**
-     * 检查是否是 JSON 请求
+     * 请求体是否为 JSON
      */
     public static function isJson(): bool
     {
-        $request = self::getRequest();
-        if (!$request) {
-            return false;
-        }
-        return str_contains(strtolower($request->getHeaderLine('Content-Type') ?? ''), 'application/json');
+        return str_contains(strtolower(self::header('Content-Type', '') ?? ''), 'json');
     }
 
     /**
-     * 检查是否是 GET 请求
+     * 客户端是否期望 JSON 响应
      */
+    public static function wantsJson(): bool
+    {
+        if (self::isJson() || self::isAjax()) {
+            return true;
+        }
+
+        return str_contains(strtolower(self::header('Accept', '') ?? ''), 'json');
+    }
+
+    /**
+     * 是否接受指定 MIME 类型
+     */
+    public static function accepts(string $mimeType): bool
+    {
+        $accept = strtolower(self::header('Accept', '') ?? '');
+
+        return $accept === '' || str_contains($accept, '*/*') || str_contains($accept, strtolower($mimeType));
+    }
+
     public static function isGet(): bool
     {
         return self::method() === 'GET';
     }
 
-    /**
-     * 检查是否是 POST 请求
-     */
     public static function isPost(): bool
     {
         return self::method() === 'POST';
     }
 
-    /**
-     * 检查是否是 PUT 请求
-     */
     public static function isPut(): bool
     {
         return self::method() === 'PUT';
     }
 
-    /**
-     * 检查是否是 DELETE 请求
-     */
     public static function isDelete(): bool
     {
         return self::method() === 'DELETE';
     }
 
-    /**
-     * 检查是否是 PATCH 请求
-     */
     public static function isPatch(): bool
     {
         return self::method() === 'PATCH';
     }
 
-    /**
-     * 检查是否是 OPTIONS 请求
-     */
     public static function isOptions(): bool
     {
         return self::method() === 'OPTIONS';
     }
 
-    /**
-     * 检查请求是否来自移动端
-     */
-    public static function isMobile(): bool
+    public static function isHead(): bool
     {
-        $ua = self::header('User-Agent', '');
-        return (bool) preg_match('/(android|bb\d+|meego)|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i', strtolower($ua));
+        return self::method() === 'HEAD';
     }
 
     /**
-     * 获取 Accept-Language
+     * 是否为指定方法
      */
-    public static function language(?string $default = 'zh-CN'): string
+    public static function isMethod(string $method): bool
     {
-        $lang = self::header('Accept-Language', '');
-        if (empty($lang)) {
+        return self::method() === Method::normalize($method);
+    }
+
+    /**
+     * 是否来自移动端
+     */
+    public static function isMobile(): bool
+    {
+        $ua = self::header('User-Agent', '') ?? '';
+
+        return (bool) preg_match(
+            '/(android|bb\d+|meego)|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino/i',
+            strtolower($ua)
+        );
+    }
+
+    /**
+     * 获取首选语言
+     */
+    public static function language(string $default = 'zh-CN'): string
+    {
+        $lang = self::header('Accept-Language', '') ?? '';
+        if ($lang === '') {
             return $default;
         }
-        preg_match('/([a-z]{1,8}(?:-[a-z]{1,8})?)/i', $lang, $matches);
-        return $matches[1] ?? $default;
+
+        if (preg_match('/([a-z]{1,8}(?:-[a-zA-Z]{1,8})?)/i', $lang, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return $default;
     }
 
     /**
@@ -340,34 +607,42 @@ class Request
     }
 
     /**
-     * 获取请求时间戳
+     * 获取请求开始时间戳（秒，含小数）
      */
     public static function time(): float
     {
         $request = self::getRequest();
-        return $request ? (float) ($request->getAttribute('request_time') ?? microtime(true)) : microtime(true);
+        $time = $request?->getAttribute('request_time');
+
+        return is_numeric($time) ? (float) $time : microtime(true);
     }
 
     /**
-     * 获取上传的文件
+     * 获取单个上传文件
      */
-    public static function file(string $name): ?array
+    public static function file(string $name): ?UploadedFileInterface
     {
-        $request = self::getRequest();
-        if (!$request) {
-            return null;
-        }
-        $files = $request->getUploadedFiles();
-        return $files[$name] ?? null;
+        $file = self::files()[$name] ?? null;
+
+        return $file instanceof UploadedFileInterface ? $file : null;
     }
 
     /**
-     * 获取所有上传的文件
+     * 获取全部上传文件
+     *
+     * @return array<string, UploadedFileInterface|array>
      */
     public static function files(): array
     {
-        $request = self::getRequest();
-        return $request ? $request->getUploadedFiles() : [];
+        return self::getRequest()?->getUploadedFiles() ?? [];
+    }
+
+    /**
+     * 是否包含指定上传文件
+     */
+    public static function hasFile(string $name): bool
+    {
+        return self::file($name) !== null;
     }
 
     /**
@@ -376,26 +651,47 @@ class Request
     public static function cookie(?string $name = null, mixed $default = null): mixed
     {
         $request = self::getRequest();
-        if (!$request) {
-            return $default;
+        if ($request === null) {
+            return $name === null ? [] : $default;
         }
+
         $cookies = $request->getCookieParams();
-        if ($name === null) {
-            return $cookies;
-        }
-        return $cookies[$name] ?? $default;
+
+        return $name === null ? $cookies : ($cookies[$name] ?? $default);
     }
 
     /**
      * 获取服务器变量
      */
-    public static function server(string $name, mixed $default = null): mixed
+    public static function server(?string $name = null, mixed $default = null): mixed
     {
         $request = self::getRequest();
-        if (!$request) {
-            return $default;
+        if ($request === null) {
+            return $name === null ? [] : $default;
         }
+
         $server = $request->getServerParams();
-        return $server[strtoupper($name)] ?? $default;
+
+        return $name === null ? $server : ($server[strtoupper($name)] ?? $default);
+    }
+
+    /**
+     * 获取解析后的请求体数组
+     *
+     * @return array<string, mixed>
+     */
+    private static function parsedBody(): array
+    {
+        $parsed = self::getRequest()?->getParsedBody();
+
+        if (is_array($parsed)) {
+            return $parsed;
+        }
+
+        if (is_object($parsed)) {
+            return get_object_vars($parsed);
+        }
+
+        return [];
     }
 }

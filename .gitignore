@@ -2,6 +2,10 @@
 /vendor/
 composer.lock
 
+# 本地专属：不进仓库（WorkBuddy 工作记忆 / 本地变更日志）
+.workbuddy/
+CHANGELOG.md
+
 # PHPUnit
 .phpunit.cache/
 .phpunit.result.cache

@@ -40,7 +40,8 @@ trait ResponseTrait
     public function getHeader(string $name): array
     {
         $name = $this->normalizeHeaderName($name);
-        return $this->headers[$this->headerNames[$name]] ?? [];
+        $original = $this->headerNames[$name] ?? null;
+        return $original !== null ? $this->headers[$original] : [];
     }
 
     public function getHeaderLine(string $name): string
