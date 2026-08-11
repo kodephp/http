@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Middleware;
 
+use Kode\Http\Response;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -78,10 +79,17 @@ class MiddlewarePipeline implements RequestHandlerInterface
 
     /**
      * 处理请求：为本次调用创建独立游标
+     *
+     * 无论中间件或最终处理器返回的是工厂 {@see Response}、PSR-7 响应、
+     * 数组还是字符串，出管道时都会被 {@see Response::resolve()} 归一化为
+     * 真实的 PSR-7 响应。因此中间件里 `return Response::json(...)` 即可，
+     * 无需再调用 `->send()`（保留亦可，向后兼容）。
      */
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        return (new PipelineRunner($this->middlewares, $this->finalHandler))->handle($request);
+        return Response::resolve(
+            (new PipelineRunner($this->middlewares, $this->finalHandler))->handle($request)
+        );
     }
 
     /**

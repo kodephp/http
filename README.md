@@ -111,37 +111,41 @@ Request::file('avatar');        // 上传文件
 Request::server('REQUEST_TIME'); // 服务器变量
 ```
 
-### Response - 响应构建（链式调用）
+### Response - 响应构建（链式调用，且本身是真实 PSR-7）
+
+> `Kode\Http\Response` 自 v3.3 起**直接继承**真实 PSR-7 实现，工厂方法与辅助方法合二为一：
+> `Response::json()` / `error()` / `success()` / `fail()` 返回的**就是真实 PSR-7 响应**，
+> 因此中间件/处理器里可**直接 `return`**，无需再调用 `->send()`（`->send()` 保留为向后兼容的空操作）。
 
 ```php
-// JSON 响应
-Response::json(['data' => 'value']);
-Response::json(['data' => 'value'], 1);  // 带业务码
+// JSON 响应（直接 return，无需 ->send()）
+return Response::json(['data' => 'value']);
+return Response::json(['data' => 'value'], 1);  // 带业务码
 
 // 业务响应（借鉴 Laravel）
-Response::success(['id' => 1], '操作成功');
-Response::fail('用户名或密码错误', 'E1001');
+return Response::success(['id' => 1], '操作成功');
+return Response::fail('用户名或密码错误', 'E1001');
 
 // HTTP 错误
-Response::error(404, 'Not Found');
-Response::error(500, 'Internal Server Error', 'E1500');
+return Response::error(404, 'Not Found');
+return Response::error(500, 'Internal Server Error', 'E1500');
 
 // 其他响应类型
-Response::text('Hello World');
-Response::html('<h1>Title</h1>');
-Response::xml('<root></root>');
-Response::empty();                // 204 空响应
-Response::redirect('/login');    // 302 重定向
-Response::download('/path/file.pdf');
+return Response::text('Hello World');
+return Response::html('<h1>Title</h1>');
+return Response::xml('<root></root>');
+return Response::empty();                // 204 空响应
+return Response::redirect('/login');    // 302 重定向
+return Response::download('/path/file.pdf');
 
-// 链式调用
-Response::success(['data' => $data])
+// 链式调用（cookie / CORS / 安全头等都是 PSR-7 上的方法）
+return Response::success(['data' => $data])
     ->status(201)
     ->header('X-Custom', 'value')
     ->withCors()
     ->withCache(3600)
     ->withSecurity()
-    ->send();
+    ->cookie('token', $jwt, httpOnly: true);
 ```
 
 ### App - 应用构建器
@@ -449,6 +453,7 @@ kode/http
 
 ## 版本历史
 
+- **v3.3.0** - **合并 Response 工厂与真实 PSR-7**：`Kode\Http\Response` 现在直接继承 `Psr7\Message\Response`，`json()`/`error()`/`success()`/`fail()` 返回的就是真实 PSR-7 响应，中间件/处理器可 `return Response::json(...)` 而无需 `->send()`（保留为向后兼容空操作）；Cookie 走 `Set-Cookie` 头、链式辅助方法（cookie/withCors/withSecurity…）全部保留；`MiddlewarePipeline` 出管道时经 `Response::resolve()` 归一化
 - **v3.2.0** - 接入最新版 `kode/facade`(^3.2) 与 `kode/queue`(^2.2)：`Kode` 实现 PSR-11 容器并接入 `FacadeProxy`（context-safe 协程安全服务解析），新增 `Support/ServiceFacade` 基础门面；新增 `Queue/Queue` 门面封装（按请求 Context 作用域收集、响应后统一派发、未配置优雅降级）与 `Integration/QueueMiddleware`；所有 kode 依赖锁定到最新稳定版
 - **v3.1.0** - 全面接入最新版 kode 生态：`kode/context` 升到 `^3.1`、`kode/exception` 升到 `^3.0`，并接入 `kode/fibers`(^4.10)/`kode/parallel`(^1.18)/`kode/process`(^5.2)；`Integration` 中间件改用最新版并发/进程引擎（Fibers 门面优先，parallel/process 可用时接管）并保留优雅降级；`Request` 将入站 `X-Request-Id`/`traceparent`/`X-Trace-Id` 写入 `kode/context` 3.x 链路追踪；`JsonErrorHandlerMiddleware` 透传 `X-Trace-Id`/`X-Span-Id` 链路头；修复 `extension_loaded('fibers')` 误判导致 Fiber 任务不执行的问题
 - **v3.0.0** - PHP 8.3+ 最低支持；重写路由器（静态哈希 + 动态正则、区分 404/405、命名路由 URL 生成）、无状态可重入中间件管道；新增 `Status`/`Method` 枚举、`Emitter`、BodyParser/RequestId/ResponseTime/Compression/SecurityHeaders 中间件；修复 PSR-7 大小写不敏感头查找告警

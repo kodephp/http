@@ -162,7 +162,7 @@ final class RouteRunner implements RequestHandlerInterface
             return Response::resolve(($this->notFoundHandler)($request));
         }
 
-        return Response::error(Status::NOT_FOUND->value, 'Not Found', 'E1004')->send();
+        return Response::error(Status::NOT_FOUND->value, 'Not Found', 'E1004');
     }
 
     /**
@@ -175,7 +175,6 @@ final class RouteRunner implements RequestHandlerInterface
         }
 
         return Response::error(Status::METHOD_NOT_ALLOWED->value, 'Method Not Allowed', 'E1005')
-            ->header('Allow', implode(', ', $allowed))
-            ->send();
+            ->header('Allow', implode(', ', $allowed));
     }
 }

@@ -9,10 +9,16 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 
 /**
- * 统一响应构建器
+ * 统一响应构建器（同时是真实的 PSR-7 响应）
  *
  * 借鉴 Laravel/ThinkPHP 的链式设计，提供流畅的响应构建体验，
  * 完全兼容 PSR-7。所有 with/set 类方法均返回新实例（不可变）。
+ *
+ * 自 v3.3 起，`Kode\Http\Response` **直接继承**真实 PSR-7 实现
+ * （{@see \Kode\Http\Psr7\Message\Response}），工厂方法与辅助方法都落在同一类上：
+ * 因此 `Response::json()` / `error()` / `success()` / `fail()` 返回的就是真实 PSR-7
+ * 响应，中间件里可直接 `return Response::json(...)`，无需再调用 `->send()`。
+ * （`->send()` 保留为向后兼容的空操作。）
  *
  * v3.0 新增：Cookie、文件流式下载、分块流式输出、JSONP、禁用缓存、
  * 返回值归一化 {@see Response::resolve()}，并修复 json_encode 失败与
@@ -21,31 +27,34 @@ use Psr\Http\Message\StreamInterface;
  * @example
  * ```php
  * Response::success(['id' => 1]);
- * Response::json(['a' => 1])->withCors()->header('X-Trace', $id)->send();
+ * return Response::json(['a' => 1])->withCors()->header('X-Trace', $id);   // 直接 return，无需 ->send()
  * Response::file('/data/report.pdf');                 // 流式下载，不占内存
  * Response::stream(fn() => yield from $rows);          // 分块输出
  * Response::success()->cookie('token', $jwt, httpOnly: true);
  * ```
  */
-class Response
+class Response extends Psr7\Message\Response
 {
     /** @var int 默认 JSON 编码选项 */
     public const int JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
-    /** @var int HTTP 状态码 */
-    protected int $statusCode = 200;
+    /**
+     * 构造函数：默认 Content-Type 为 application/json
+     *
+     * 兼容 PSR-7 基类签名，仅在未显式指定 Content-Type 时填充 JSON 默认值，
+     * 使 `Response::json()` 等工厂方法天然携带正确的内容类型。
+     */
+    public function __construct(
+        int $statusCode = 200,
+        array $headers = [],
+        ?StreamInterface $body = null,
+        string $protocolVersion = '1.1',
+        string $reasonPhrase = ''
+    ) {
+        $headers['Content-Type'] ??= 'application/json; charset=utf-8';
 
-    /** @var array<string, string> 响应头 */
-    protected array $headers = ['Content-Type' => 'application/json; charset=utf-8'];
-
-    /** @var list<string> Set-Cookie 头集合 */
-    protected array $cookies = [];
-
-    /** @var string 响应体 */
-    protected string $body = '';
-
-    /** @var StreamInterface|null 流式响应体（优先于 $body） */
-    protected ?StreamInterface $stream = null;
+        parent::__construct($statusCode, $headers, $body, $protocolVersion, $reasonPhrase);
+    }
 
     /**
      * 创建空白响应
@@ -273,13 +282,12 @@ class Response
     {
         return match (true) {
             $result instanceof ResponseInterface => $result,
-            $result instanceof self => $result->send(),
-            $result === null => self::empty()->send(),
-            is_string($result) => self::html($result)->send(),
-            is_array($result), $result instanceof \JsonSerializable => self::json($result)->send(),
-            is_scalar($result) => self::json($result)->send(),
-            $result instanceof \Stringable => self::html((string) $result)->send(),
-            default => self::json($result)->send(),
+            $result === null => self::empty(),
+            is_string($result) => self::html($result),
+            is_array($result), $result instanceof \JsonSerializable => self::json($result),
+            is_scalar($result) => self::json($result),
+            $result instanceof \Stringable => self::html((string) $result),
+            default => self::json($result),
         };
     }
 
@@ -288,25 +296,15 @@ class Response
      */
     public function body(string $body): self
     {
-        $new = clone $this;
-        $new->body = $body;
-        $new->stream = null;
-        return $new;
+        return $this->withBody(Stream::create($body));
     }
 
     /**
-     * 获取响应体
+     * 获取响应体（字符串形式）
      */
-    public function getBody(): string
+    public function getBodyString(): string
     {
-        if ($this->stream !== null) {
-            if ($this->stream->isSeekable()) {
-                $this->stream->rewind();
-            }
-            return (string) $this->stream;
-        }
-
-        return $this->body;
+        return (string) parent::getBody();
     }
 
     /**
@@ -314,10 +312,7 @@ class Response
      */
     public function withStream(StreamInterface $stream): self
     {
-        $new = clone $this;
-        $new->stream = $stream;
-        $new->body = '';
-        return $new;
+        return $this->withBody($stream);
     }
 
     /**
@@ -329,17 +324,15 @@ class Response
             throw new \InvalidArgumentException('非法的 HTTP 状态码: ' . $code);
         }
 
-        $new = clone $this;
-        $new->statusCode = $code;
-        return $new;
+        return $this->withStatus($code);
     }
 
     /**
-     * 获取状态码
+     * 获取状态码（向后兼容别名）
      */
     public function getStatus(): int
     {
-        return $this->statusCode;
+        return $this->getStatusCode();
     }
 
     /**
@@ -355,9 +348,7 @@ class Response
      */
     public function header(string $name, string $value): self
     {
-        $new = clone $this;
-        $new->headers[$name] = $value;
-        return $new;
+        return $this->withHeader($name, $value);
     }
 
     /**
@@ -367,43 +358,15 @@ class Response
      */
     public function headers(array $headers): self
     {
-        $new = clone $this;
+        $new = $this;
         foreach ($headers as $name => $value) {
-            $new->headers[$name] = (string) $value;
+            $new = $new->header($name, (string) $value);
         }
         return $new;
     }
 
     /**
-     * 移除响应头
-     */
-    public function withoutHeader(string $name): self
-    {
-        $new = clone $this;
-        foreach (array_keys($new->headers) as $key) {
-            if (strcasecmp($key, $name) === 0) {
-                unset($new->headers[$key]);
-            }
-        }
-        return $new;
-    }
-
-    /**
-     * 获取响应头
-     *
-     * @return array<string, string|list<string>>
-     */
-    public function getHeaders(): array
-    {
-        $headers = $this->headers;
-        if ($this->cookies !== []) {
-            $headers['Set-Cookie'] = $this->cookies;
-        }
-        return $headers;
-    }
-
-    /**
-     * 设置 Cookie
+     * 设置 Cookie（写入 Set-Cookie 头，协程安全且可多次叠加）
      *
      * @param int $expires 过期时间戳，0 表示会话 Cookie
      * @param string $sameSite Lax / Strict / None
@@ -440,9 +403,7 @@ class Response
             $parts[] = 'SameSite=' . $sameSite;
         }
 
-        $new = clone $this;
-        $new->cookies[] = implode('; ', $parts);
-        return $new;
+        return $this->withAddedHeader('Set-Cookie', implode('; ', $parts));
     }
 
     /**
@@ -513,27 +474,28 @@ class Response
      */
     public function withEtag(?string $etag = null, bool $weak = false): self
     {
-        $etag ??= md5($this->getBody());
+        $etag ??= md5((string) parent::getBody());
         $value = ($weak ? 'W/' : '') . '"' . trim($etag, '"') . '"';
         return $this->header('ETag', $value);
     }
 
     /**
-     * 转换为 PSR-7 Response
+     * 返回自身（已是 PSR-7 响应）
      */
     public function toResponse(): ResponseInterface
     {
-        $body = $this->stream ?? Stream::create($this->body);
-
-        return new Psr7\Message\Response($this->statusCode, $this->getHeaders(), $body);
+        return $this;
     }
 
     /**
      * 发送响应（返回 PSR-7 响应对象）
+     *
+     * 历史遗留方法，保留以向后兼容。自 v3.3 起工厂方法已直接返回真实 PSR-7，
+     * 中间件里 `return Response::json(...)` 即可，无需调用本方法。
      */
     public function send(): ResponseInterface
     {
-        return $this->toResponse();
+        return $this;
     }
 
     /**
@@ -541,7 +503,7 @@ class Response
      */
     public function end(): void
     {
-        Emitter::emit($this->toResponse());
+        Emitter::emit($this);
     }
 
     /**
