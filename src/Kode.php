@@ -4,11 +4,20 @@ declare(strict_types=1);
 
 namespace Kode\Http;
 
+use Kode\Facade\Facade;
+use Kode\Facade\FacadeProxy;
+use Psr\Container\ContainerInterface;
+use Psr\Container\NotFoundExceptionInterface;
+use Psr\Container\ContainerExceptionInterface;
+
 /**
  * Kode\Http 框架入口类
  *
  * 提供 HTTP 服务端的统一入口和快捷方法
  * 协调 PSR-7/15/17 组件的初始化和运行
+ *
+ * 同时实现 PSR-11 容器接口，可无缝接入 {@see FacadeProxy}（kode/facade），
+ * 在 Swoole / Fiber 等协程环境下通过 context-safe 模式实现按请求隔离的服务解析。
  *
  * @method static \Kode\Http\Psr7\Message\Response ok(string $body = '', array $headers = [])
  * @method static \Kode\Http\Psr7\Message\Response json(array $data, int $status = 200)
@@ -16,10 +25,10 @@ namespace Kode\Http;
  * @method static \Kode\Http\Exception\HttpException notFound(string $message = 'Not Found')
  * @method static \Kode\Http\Exception\HttpException internalError(string $message = 'Internal Server Error')
  */
-class Kode
+class Kode implements ContainerInterface
 {
     /** @var string 版本号 */
-    public const VERSION = '3.1.0';
+    public const VERSION = '3.2.0';
 
     /** @var array<string, mixed> 全局配置 */
     protected static array $config = [];
@@ -91,6 +100,72 @@ class Kode
     }
 
     /**
+     * PSR-11: 检查容器中是否存在指定标识符
+     */
+    public function has(string $id): bool
+    {
+        return self::hasService($id);
+    }
+
+    /**
+     * PSR-11: 从容器获取服务实例
+     *
+     * @throws NotFoundExceptionInterface 服务未注册时抛出
+     */
+    public function get(string $id): mixed
+    {
+        $service = self::service($id);
+        if ($service === null) {
+            throw new class(sprintf('服务未注册: %s', $id)) extends \RuntimeException implements NotFoundExceptionInterface {};
+        }
+
+        return $service;
+    }
+
+    /**
+     * 以 PSR-11 容器形式返回自身（供 kode/facade 等外部组件复用）
+     */
+    public static function container(): ContainerInterface
+    {
+        return new self();
+    }
+
+    /**
+     * 将 Kode 注册为 kode/facade 的后端容器，并启用 context-safe 模式。
+     *
+     * 启用后，基于 {@see ServiceFacade} 的服务门面在 Swoole / Fiber 等协程环境中
+     * 会按请求（Context 作用域）隔离解析结果，避免跨协程串号。
+     *
+     * 仅当 kode/facade 可用时生效，否则静默跳过（保持向后兼容）。
+     */
+    public static function enableFacades(bool $contextSafe = true): void
+    {
+        if (!class_exists(FacadeProxy::class)) {
+            return;
+        }
+
+        FacadeProxy::setContainer(self::container());
+
+        if ($contextSafe && class_exists(Facade::class) && method_exists(Facade::class, 'enableContextSafeMode')) {
+            Facade::enableContextSafeMode();
+        }
+    }
+
+    /**
+     * 将服务标识符与门面类绑定（委托给 kode/facade）
+     *
+     * @param class-string $facade 门面类名
+     */
+    public static function bindFacade(string $facade, string $serviceId): void
+    {
+        if (!class_exists(FacadeProxy::class)) {
+            return;
+        }
+
+        FacadeProxy::bind($facade, $serviceId);
+    }
+
+    /**
      * 创建 PSR-7 Response 的快捷响应
      *
      * @param int $status HTTP 状态码
@@ -157,5 +232,10 @@ class Kode
     {
         self::$config = [];
         self::$services = [];
+
+        if (class_exists(FacadeProxy::class)) {
+            FacadeProxy::clearInstances();
+            FacadeProxy::clearBindings();
+        }
     }
 }

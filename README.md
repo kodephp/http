@@ -241,8 +241,46 @@ $app->serve(8080);
 | `ProcessWorkerMiddleware` | 进程工作单元，集成 `kode/process`（≥5.x），支持分布式，可接管真实进程池 |
 | `FiberCoroutineMiddleware` | Fiber 协程，集成 `kode/fibers`（≥4.x）作为统一并发引擎，支持分布式 |
 | `ParallelMiddleware` | 并行处理，集成 `kode/parallel`（≥1.x），支持分布式 |
+| `QueueMiddleware` | 队列派发，集成 `kode/queue`（≥2.x），处理器返回后统一派发收集的任务 |
 
-> **并发引擎优先级（均可优雅降级）**：`ParallelMiddleware` 优先使用 `kode/parallel`（需 ZTS + ext-parallel 真多线程），其次 `kode/fibers` 统一并发门面，最后回退原生 `\Fiber`；`FiberCoroutineMiddleware` 优先 `kode/fibers::concurrent` + 逐任务重试，回退原生 `\Fiber`。`kode/fibers` / `kode/parallel` / `kode/process` 均为可选依赖（已纳入 `require-dev` 与 `suggest`），未安装时自动降级，不影响基础功能。
+> **并发引擎优先级（均可优雅降级）**：`ParallelMiddleware` 优先使用 `kode/parallel`（需 ZTS + ext-parallel 真多线程），其次 `kode/fibers` 统一并发门面，最后回退原生 `\Fiber`；`FiberCoroutineMiddleware` 优先 `kode/fibers::concurrent` + 逐任务重试，回退原生 `\Fiber`。`kode/fibers` / `kode/parallel` / `kode/process` / `kode/queue` 均为可选依赖（已纳入 `require-dev` 与 `suggest`），未安装时自动降级，不影响基础功能。
+
+### 服务容器与门面（kode/facade 集成）
+
+`Kode` 本身实现 PSR-11 容器接口，可无缝接入 `kode/facade` 的 `FacadeProxy`，并启用 **context-safe 模式**，在 Swoole / Fiber 协程环境下按请求（Context 作用域）隔离服务解析，避免跨协程串号：
+
+```php
+use Kode\Http\Kode;
+use Kode\Http\Support\ServiceFacade;
+
+Kode::register('cache', new Cache());
+Kode::enableFacades();           // 将 Kode 设为 kode/facade 后端容器并启用协程安全
+
+final class Cache extends ServiceFacade
+{
+    protected static function id(): string { return 'cache'; }
+}
+
+Cache::get('key');               // 经 Kode 容器解析，协程安全
+```
+
+### 队列派发（kode/queue 集成）
+
+在路由处理器中收集后台任务，由 `QueueMiddleware` 在响应返回后统一派发，避免阻塞响应；任务收集基于 `kode/context` 请求作用域，天然协程安全：
+
+```php
+use Kode\Http\Integration\QueueMiddleware;
+use Kode\Http\Queue\Queue;
+
+// bootstrap 中注入管理器（也可用 Queue::setManagerFromContainer($psr11)）
+Queue::setManager(\Kode\Queue\QueueManager::make([/* 连接配置 */]));
+$app->pipe(QueueMiddleware::fromContainer(Kode::container()));
+
+// 路由处理器内
+Queue::push(SendMail::class, ['to' => $email]);   // 仅收集，不阻塞响应
+```
+
+未配置 `QueueManager` 时自动懒加载内存驱动，便于本地开发与测试。
 
 ## 分布式部署
 
@@ -360,7 +398,12 @@ src/
 │   ├── DistributedConfig.php
 │   ├── ProcessWorkerMiddleware.php
 │   ├── FiberCoroutineMiddleware.php
-│   └── ParallelMiddleware.php
+│   ├── ParallelMiddleware.php
+│   └── QueueMiddleware.php         # 队列派发（kode/queue）
+├── Queue/                         # 队列门面封装（kode/queue）
+│   └── Queue.php                   # 按请求收集、统一派发的队列门面
+├── Support/                       # 支持组件
+│   └── ServiceFacade.php           # 协程安全的服务门面基类（kode/facade）
 ├── Server/                       # 服务端适配器
 ├── Exception/                     # 异常
 ├── App.php                       # 应用构建器
@@ -385,21 +428,28 @@ src/
 ```
 kode/http
     │
-    ├── kode/context     # 请求上下文传递和管理
+    ├── kode/context     # 请求上下文传递和管理（按请求隔离，协程安全）
+    │
+    ├── kode/exception   # 异常体系（错误码 / 链路追踪头）
     │
     ├── kode/runtime     # 协程运行时抽象
+    │
+    ├── kode/facade      # 服务门面（context-safe 协程安全解析，Kode 容器已接入）
     │
     ├── kode/fibers      # Fiber 协程调度
     │       │
     │       └── kode/parallel  # 并行任务处理
     │
-    └── kode/process     # 进程管理和 Worker
-            │
-            └── kode/http-client  # HTTP 客户端（统一到 PSR-7 抽象）
+    ├── kode/process     # 进程管理和 Worker
+    │       │
+    │       └── kode/http-client  # HTTP 客户端（统一到 PSR-7 抽象）
+    │
+    └── kode/queue       # 后台任务队列（QueueMiddleware 响应后统一派发）
 ```
 
 ## 版本历史
 
+- **v3.2.0** - 接入最新版 `kode/facade`(^3.2) 与 `kode/queue`(^2.2)：`Kode` 实现 PSR-11 容器并接入 `FacadeProxy`（context-safe 协程安全服务解析），新增 `Support/ServiceFacade` 基础门面；新增 `Queue/Queue` 门面封装（按请求 Context 作用域收集、响应后统一派发、未配置优雅降级）与 `Integration/QueueMiddleware`；所有 kode 依赖锁定到最新稳定版
 - **v3.1.0** - 全面接入最新版 kode 生态：`kode/context` 升到 `^3.1`、`kode/exception` 升到 `^3.0`，并接入 `kode/fibers`(^4.10)/`kode/parallel`(^1.18)/`kode/process`(^5.2)；`Integration` 中间件改用最新版并发/进程引擎（Fibers 门面优先，parallel/process 可用时接管）并保留优雅降级；`Request` 将入站 `X-Request-Id`/`traceparent`/`X-Trace-Id` 写入 `kode/context` 3.x 链路追踪；`JsonErrorHandlerMiddleware` 透传 `X-Trace-Id`/`X-Span-Id` 链路头；修复 `extension_loaded('fibers')` 误判导致 Fiber 任务不执行的问题
 - **v3.0.0** - PHP 8.3+ 最低支持；重写路由器（静态哈希 + 动态正则、区分 404/405、命名路由 URL 生成）、无状态可重入中间件管道；新增 `Status`/`Method` 枚举、`Emitter`、BodyParser/RequestId/ResponseTime/Compression/SecurityHeaders 中间件；修复 PSR-7 大小写不敏感头查找告警
 - **v2.1.0** - 增强 App 应用构建器，支持路由参数提取

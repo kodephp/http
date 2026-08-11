@@ -26,7 +26,7 @@
     ],
     "homepage": "https://github.com/kodephp/http",
     "license": "Apache-2.0",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "authors": [
         {
             "name": "Kode Team",
@@ -49,9 +49,11 @@
     },
     "require-dev": {
         "guzzlehttp/psr7": "^2.1",
+        "kode/facade": "^3.2",
         "kode/fibers": "^4.10",
         "kode/parallel": "^1.18",
         "kode/process": "^5.2",
+        "kode/queue": "^2.2",
         "phpunit/phpunit": "^10.0|^11.0|^12.0",
         "swoole/ide-helper": "^4.15|^5.0",
         "symfony/var-dumper": "^6.0|^7.0"
@@ -59,9 +61,11 @@
     "suggest": {
         "ext-swoole": "用于 Swoole 协程支持和异步 HTTP 服务器",
         "workerman/workerman": "用于 Workerman 多进程支持",
+        "kode/facade": "用于服务门面与协程安全（context-safe）的服务解析（最新 3.x，Kode 容器已原生接入）",
         "kode/fibers": "用于 Fiber 协程调度和并发处理（最新 4.x，作为并发引擎被 Integration 中间件优先使用）",
         "kode/process": "用于进程池管理和 Worker 进程（最新 5.x，ProcessWorkerMiddleware 可接管真实进程池）",
         "kode/parallel": "用于并行任务执行和多线程支持（最新 1.x，需 ZTS + ext-parallel，ParallelMiddleware 优先使用）",
+        "kode/queue": "用于后台任务队列（最新 2.x，QueueMiddleware 在响应后统一派发收集的任务）",
         "kode/runtime": "用于协程运行时抽象",
         "guzzlehttp/psr7": "用于 PSR-7 消息实现参考"
     },
@@ -80,7 +84,7 @@
     },
     "extra": {
         "branch-alias": {
-            "dev-main": "3.1.x-dev"
+            "dev-main": "3.2.x-dev"
         },
         "kode": {
             "name": "Kode\\Http",
