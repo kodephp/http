@@ -113,11 +113,22 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
             $errorData['error']['trace'] = $e->getTraceAsString();
         }
 
-        return new Response(
+        $response = new Response(
             $statusCode,
             ['Content-Type' => 'application/json'],
             Stream::create(json_encode($errorData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))
         );
+
+        // 透传 kode/exception 3.0 的分布式链路追踪标识
+        if ($e instanceof KodeException) {
+            $response = $response->withHeader('X-Trace-Id', $e->getTraceId());
+
+            if (method_exists($e, 'getSpanId')) {
+                $response = $response->withHeader('X-Span-Id', $e->getSpanId());
+            }
+        }
+
+        return $response;
     }
 
     /**

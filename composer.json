@@ -26,7 +26,7 @@
     ],
     "homepage": "https://github.com/kodephp/http",
     "license": "Apache-2.0",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "authors": [
         {
             "name": "Kode Team",
@@ -40,25 +40,28 @@
     },
     "require": {
         "php": "^8.3",
-        "kode/context": "^2.1",
-        "kode/exception": "^2.0",
+        "kode/context": "^3.1",
+        "kode/exception": "^3.0",
         "psr/http-message": "^1.0|^2.0",
         "psr/http-server-handler": "^1.0",
         "psr/http-server-middleware": "^1.0",
         "psr/http-factory": "^1.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.0|^11.0|^12.0",
         "guzzlehttp/psr7": "^2.1",
+        "kode/fibers": "^4.10",
+        "kode/parallel": "^1.18",
+        "kode/process": "^5.2",
+        "phpunit/phpunit": "^10.0|^11.0|^12.0",
         "swoole/ide-helper": "^4.15|^5.0",
         "symfony/var-dumper": "^6.0|^7.0"
     },
     "suggest": {
         "ext-swoole": "用于 Swoole 协程支持和异步 HTTP 服务器",
         "workerman/workerman": "用于 Workerman 多进程支持",
-        "kode/fibers": "用于 Fiber 协程调度和并发处理",
-        "kode/process": "用于进程池管理和 Worker 进程",
-        "kode/parallel": "用于并行任务执行和多线程支持",
+        "kode/fibers": "用于 Fiber 协程调度和并发处理（最新 4.x，作为并发引擎被 Integration 中间件优先使用）",
+        "kode/process": "用于进程池管理和 Worker 进程（最新 5.x，ProcessWorkerMiddleware 可接管真实进程池）",
+        "kode/parallel": "用于并行任务执行和多线程支持（最新 1.x，需 ZTS + ext-parallel，ParallelMiddleware 优先使用）",
         "kode/runtime": "用于协程运行时抽象",
         "guzzlehttp/psr7": "用于 PSR-7 消息实现参考"
     },
@@ -77,7 +80,7 @@
     },
     "extra": {
         "branch-alias": {
-            "dev-main": "1.2.x-dev"
+            "dev-main": "3.1.x-dev"
         },
         "kode": {
             "name": "Kode\\Http",

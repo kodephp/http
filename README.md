@@ -6,7 +6,7 @@
 [![PSR-7/15/17](https://img.shields.io/badge/PSR-7%2F15%2F17-brightgreen)](https://www.php-fig.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange)](LICENSE)
 
-> **Kode\Http** 是一个专为 PHP 8.3+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/context`、`kode/process`、`kode/fibers`、`kode/parallel`，打造现代化全栈 PHP 应用。
+> **Kode\Http** 是一个专为 PHP 8.3+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/context`、`kode/exception`、`kode/fibers`、`kode/parallel`、`kode/process`，打造现代化全栈 PHP 应用。
 >
 > **设计理念**：借鉴 ThinkPHP/Laravel/webman 的简洁风格，提供 `Request`、`Response`、`App` 三大核心 API，让开发者无需心智负担即可快速构建高性能 HTTP 服务。
 
@@ -238,9 +238,11 @@ $app->serve(8080);
 
 | 组件 | 说明 |
 |------|------|
-| `ProcessWorkerMiddleware` | 进程工作单元，集成 `kode/process`，支持分布式 |
-| `FiberCoroutineMiddleware` | Fiber 协程，集成 `kode/fibers`，支持分布式 |
-| `ParallelMiddleware` | 并行处理，集成 `kode/parallel`，支持分布式 |
+| `ProcessWorkerMiddleware` | 进程工作单元，集成 `kode/process`（≥5.x），支持分布式，可接管真实进程池 |
+| `FiberCoroutineMiddleware` | Fiber 协程，集成 `kode/fibers`（≥4.x）作为统一并发引擎，支持分布式 |
+| `ParallelMiddleware` | 并行处理，集成 `kode/parallel`（≥1.x），支持分布式 |
+
+> **并发引擎优先级（均可优雅降级）**：`ParallelMiddleware` 优先使用 `kode/parallel`（需 ZTS + ext-parallel 真多线程），其次 `kode/fibers` 统一并发门面，最后回退原生 `\Fiber`；`FiberCoroutineMiddleware` 优先 `kode/fibers::concurrent` + 逐任务重试，回退原生 `\Fiber`。`kode/fibers` / `kode/parallel` / `kode/process` 均为可选依赖（已纳入 `require-dev` 与 `suggest`），未安装时自动降级，不影响基础功能。
 
 ## 分布式部署
 
@@ -398,6 +400,7 @@ kode/http
 
 ## 版本历史
 
+- **v3.1.0** - 全面接入最新版 kode 生态：`kode/context` 升到 `^3.1`、`kode/exception` 升到 `^3.0`，并接入 `kode/fibers`(^4.10)/`kode/parallel`(^1.18)/`kode/process`(^5.2)；`Integration` 中间件改用最新版并发/进程引擎（Fibers 门面优先，parallel/process 可用时接管）并保留优雅降级；`Request` 将入站 `X-Request-Id`/`traceparent`/`X-Trace-Id` 写入 `kode/context` 3.x 链路追踪；`JsonErrorHandlerMiddleware` 透传 `X-Trace-Id`/`X-Span-Id` 链路头；修复 `extension_loaded('fibers')` 误判导致 Fiber 任务不执行的问题
 - **v3.0.0** - PHP 8.3+ 最低支持；重写路由器（静态哈希 + 动态正则、区分 404/405、命名路由 URL 生成）、无状态可重入中间件管道；新增 `Status`/`Method` 枚举、`Emitter`、BodyParser/RequestId/ResponseTime/Compression/SecurityHeaders 中间件；修复 PSR-7 大小写不敏感头查找告警
 - **v2.1.0** - 增强 App 应用构建器，支持路由参数提取
 - **v2.0.0** - 借鉴 ThinkPHP/Laravel/webman 重构 API

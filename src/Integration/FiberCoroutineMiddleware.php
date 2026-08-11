@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kode\Http\Integration;
 
 use Kode\Exception\KodeException;
+use Kode\Fibers\Fibers;
 use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
@@ -109,7 +110,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
         $startTime = microtime(true);
 
         try {
-            if (!extension_loaded('fibers')) {
+            if (!class_exists(\Fiber::class)) {
                 return $handler->handle($request);
             }
 
@@ -225,9 +226,41 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
 
     /**
      * 并发执行任务
+     *
+     * 优先使用 kode/fibers 最新版调度器（Fibers::concurrent + 逐任务重试），
+     * 未安装 kode/fibers 时回退到原生 \Fiber 实现。
      */
     private function executeConcurrent(array $tasks): array
     {
+        $maxRetries = $this->config['max_retries'];
+        $retryDelay = $this->config['retry_delay'];
+        $timeout = $this->config['timeout'];
+
+        if (class_exists(Fibers::class)) {
+            $wrapped = [];
+            foreach ($tasks as $key => $task) {
+                $wrapped[$key] = function () use ($task, $maxRetries, $retryDelay) {
+                    try {
+                        return Fibers::retry($task, $maxRetries, (float) $retryDelay);
+                    } catch (\Throwable $e) {
+                        return ['error' => $e->getMessage(), 'attempts' => $maxRetries];
+                    }
+                };
+            }
+
+            try {
+                $results = Fibers::concurrent($wrapped, (float) $timeout);
+                $this->stats['fibers_created'] += count($tasks);
+                $this->stats['fibers_completed'] += count($results);
+                return $results;
+            } catch (\Throwable $e) {
+                // 调度层异常（非业务任务异常）按整体失败处理
+                $this->stats['fibers_failed']++;
+                return ['_error' => $e->getMessage()];
+            }
+        }
+
+        // 回退：原生 \Fiber 实现
         $results = [];
         $fibers = [];
         $fiberStartTimes = [];
@@ -243,10 +276,6 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
                 return null;
             });
         }
-
-        $maxRetries = $this->config['max_retries'];
-        $retryDelay = $this->config['retry_delay'];
-        $timeout = $this->config['timeout'];
 
         foreach ($fibers as $key => $fiber) {
             $attempt = 0;

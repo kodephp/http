@@ -35,6 +35,14 @@ class Request
     /** @var string 上下文存储键 */
     private const string CONTEXT_KEY = '__kode_http_request';
 
+    /** kode/context 3.x 链路追踪键，随请求写入/清理 */
+    private const array TRACE_KEYS = [
+        Context::REQUEST_ID,
+        Context::TRACE_ID,
+        Context::SPAN_ID,
+        Context::CORRELATION_ID,
+    ];
+
     /** @var ServerRequestInterface|null 无上下文组件时的回退存储 */
     private static ?ServerRequestInterface $fallback = null;
 
@@ -54,6 +62,7 @@ class Request
     {
         if (class_exists(Context::class)) {
             Context::set(self::CONTEXT_KEY, $request);
+            self::syncTraceContext($request);
             return;
         }
 
@@ -80,9 +89,41 @@ class Request
     {
         if (class_exists(Context::class)) {
             Context::delete(self::CONTEXT_KEY);
+
+            foreach (self::TRACE_KEYS as $key) {
+                Context::delete($key);
+            }
         }
 
         self::$fallback = null;
+    }
+
+    /**
+     * 将入站请求的链路标识写入 kode/context 3.x 追踪上下文
+     *
+     * 优先级：X-Request-Id → X-Trace-Id（请求 ID）；traceparent / X-Trace-Id（链路 ID）。
+     * 使下游 KodeException、中间件可复用同一链路，实现分布式追踪对齐。
+     */
+    private static function syncTraceContext(ServerRequestInterface $request): void
+    {
+        $requestId = $request->getHeaderLine('X-Request-Id')
+            ?: $request->getHeaderLine('X-Trace-Id')
+            ?: '';
+        if ($requestId !== '') {
+            Context::set(Context::REQUEST_ID, $requestId);
+        }
+
+        $traceId = $request->getHeaderLine('traceparent')
+            ?: $request->getHeaderLine('X-Trace-Id')
+            ?: '';
+        if ($traceId !== '') {
+            Context::set(Context::TRACE_ID, $traceId);
+        }
+
+        $correlationId = $request->getHeaderLine('X-Correlation-Id') ?: '';
+        if ($correlationId !== '') {
+            Context::set(Context::CORRELATION_ID, $correlationId);
+        }
     }
 
     /**

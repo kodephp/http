@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Kode\Http\Integration;
 
 use Kode\Exception\KodeException;
+use Kode\Fibers\Fibers;
 use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
+use Kode\Parallel\Parallel;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -136,8 +138,73 @@ class ParallelMiddleware implements MiddlewareInterface
 
     /**
      * 本地并行执行
+     *
+     * 执行引擎优先级：
+     * 1. kode/parallel（需 ZTS + ext-parallel，真正多线程并行）
+     * 2. kode/fibers 统一并发门面（Fibers::concurrent）
+     * 3. 原生 \Fiber 回退实现
      */
     private function executeParallel(array $tasks): array
+    {
+        if (extension_loaded('parallel') && class_exists(Parallel::class)) {
+            return $this->executeWithParallel($tasks);
+        }
+
+        if (class_exists(Fibers::class)) {
+            return $this->executeWithFibers($tasks);
+        }
+
+        return $this->executeWithFallback($tasks);
+    }
+
+    /**
+     * 使用 kode/parallel 真多线程并行
+     */
+    private function executeWithParallel(array $tasks): array
+    {
+        $futures = [];
+        foreach ($tasks as $key => $task) {
+            $futures[$key] = Parallel::run($task);
+        }
+
+        $timeoutMs = (int) ($this->config['timeout'] * 1000);
+        $settled = Parallel::all($futures, $timeoutMs);
+
+        $results = [];
+        foreach ($futures as $key => $future) {
+            try {
+                $results[$key] = $settled[$key] ?? $future->getOrNull();
+            } catch (\Throwable $e) {
+                $results[$key] = ['error' => $e->getMessage()];
+                $this->stats['tasks_failed']++;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * 使用 kode/fibers 统一并发门面
+     */
+    private function executeWithFibers(array $tasks): array
+    {
+        $wrapped = [];
+        foreach ($tasks as $key => $task) {
+            $wrapped[$key] = fn () => $this->safeRun($task);
+        }
+
+        try {
+            return Fibers::concurrent($wrapped, (float) $this->config['timeout']);
+        } catch (\Throwable $e) {
+            $this->stats['tasks_failed']++;
+            return ['_error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * 原生 \Fiber 回退实现
+     */
+    private function executeWithFallback(array $tasks): array
     {
         $results = [];
         $batches = array_chunk($tasks, $this->maxConcurrency, true);
@@ -150,8 +217,7 @@ class ParallelMiddleware implements MiddlewareInterface
 
             foreach ($promises as $key => $promise) {
                 try {
-                    $result = $this->await($promise);
-                    $results[$key] = $result;
+                    $results[$key] = $this->await($promise);
                 } catch (\Throwable $e) {
                     $results[$key] = ['error' => $e->getMessage()];
                     $this->stats['tasks_failed']++;
@@ -160,6 +226,21 @@ class ParallelMiddleware implements MiddlewareInterface
         }
 
         return $results;
+    }
+
+    /**
+     * 安全执行单个任务，将异常包装为错误结果（避免并发整体失败）
+     */
+    private function safeRun(callable $task): mixed
+    {
+        try {
+            if ($task instanceof \Closure) {
+                return $task();
+            }
+            return call_user_func($task);
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
     }
 
     /**

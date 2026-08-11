@@ -6,9 +6,12 @@ namespace Kode\Http\Integration;
 
 use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
+use Kode\Process\Worker\WorkerFactory;
+use Kode\Process\Worker\WorkerPool;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
@@ -60,6 +63,9 @@ class ProcessWorkerMiddleware implements MiddlewareInterface
     /** @var mixed Worker 池实例 */
     private mixed $workerPool = null;
 
+    /** @var LoggerInterface|null 日志器 */
+    private ?LoggerInterface $logger = null;
+
     /** @var array 统计信息 */
     private array $stats = [
         'requests_total' => 0,
@@ -92,6 +98,51 @@ class ProcessWorkerMiddleware implements MiddlewareInterface
         if (isset($config['distributed']) && is_array($config['distributed'])) {
             $this->distributedConfig = DistributedConfig::fromArray($config['distributed']);
         }
+    }
+
+    /**
+     * 是否支持 kode/process 真实进程池（已安装且可用）
+     */
+    public function hasProcessSupport(): bool
+    {
+        return class_exists(WorkerPool::class);
+    }
+
+    /**
+     * 初始化并启动真实进程池（懒加载，仅在显式调用时创建，不会在请求处理中自动拉起）
+     *
+     * @param LoggerInterface|null $logger 日志器
+     * @return WorkerPool|null 成功返回池实例，未安装 kode/process 时返回 null
+     */
+    public function initWorkerPool(?LoggerInterface $logger = null): ?WorkerPool
+    {
+        if ($this->workerPool !== null) {
+            return $this->workerPool;
+        }
+
+        if (!class_exists(WorkerPool::class)) {
+            return null;
+        }
+
+        $this->logger = $logger ?? new NullLogger();
+        $factory = new WorkerFactory($this->logger);
+        $pool = new WorkerPool((int) $this->config['pool_size'], $factory, $this->logger);
+
+        if (method_exists($pool, 'start')) {
+            $pool->start();
+        }
+
+        $this->workerPool = $pool;
+
+        return $pool;
+    }
+
+    /**
+     * 获取已初始化的进程池实例（可能为 null）
+     */
+    public function getWorkerPool(): ?WorkerPool
+    {
+        return $this->workerPool instanceof WorkerPool ? $this->workerPool : null;
     }
 
     /**
@@ -205,7 +256,7 @@ class ProcessWorkerMiddleware implements MiddlewareInterface
     {
         $uptime = microtime(true) - $this->stats['start_time'];
 
-        return [
+        $stats = [
             'worker_id' => $this->workerId,
             'distributed' => $this->isDistributed(),
             'node_id' => $this->distributedConfig?->getNodeId(),
@@ -217,7 +268,14 @@ class ProcessWorkerMiddleware implements MiddlewareInterface
                 : 0,
             'uptime' => $uptime,
             'pool_size' => $this->config['pool_size'],
+            'process_support' => $this->hasProcessSupport(),
         ];
+
+        if ($this->workerPool instanceof WorkerPool && method_exists($this->workerPool, 'getStats')) {
+            $stats['worker_pool'] = $this->workerPool->getStats();
+        }
+
+        return $stats;
     }
 
     /**
