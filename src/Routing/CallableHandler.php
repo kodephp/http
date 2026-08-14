@@ -15,7 +15,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  *
  * @example
  * ```php
- * $handler = new CallableHandler(fn($req) => Response::success()->send());
+ * $handler = new CallableHandler(fn($req) => Response::success());
  * ```
  */
 final class CallableHandler implements RequestHandlerInterface

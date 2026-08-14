@@ -218,6 +218,13 @@ $app->serve(8080);
 | `Stream` | 流式正文，支持读取、写入、定位等操作（自研实现） |
 | `Uri` | URI 实现，支持解析和构建 URI 各部分 |
 
+> **v3.4 起消息语义变更（契约级）**：`Request` / `Response` / `ServerRequest` 的 `with*` 方法
+> **原地修改并返回自身**（仿 webman / hyperf），不再克隆。即 `$a === $a->withHeader(...)`，
+> 且 `$a->withHeader(...)` 会改 `$a` 本身。这消除了中间件管道逐层改消息时的对象分配。
+> 若需独立快照请显式 `clone $msg`。`Uri` 仍保持 PSR-7 不可变语义。
+>
+> 约定：中间件「只用返回值、不在中间件之间持有消息引用」，避免可变语义导致的隐蔽串改。
+
 ## PSR-15 中间件
 
 > v3.4 起中间件管道为**无状态、可重入、零逐请求分配**实现：`MiddlewarePipeline` 在首次 `handle()` 时将中间件栈**预编译**为一个内部闭包链（洋葱模型），之后每请求直接复用，不再逐层 `new` 游标、不再有递归调用栈。管道对象本身只持有「中间件栈 + 最终处理器」，同一实例可在 Swoole 协程 / Fiber 并发环境下安全复用。
@@ -385,8 +392,7 @@ src/
 ├── Middleware/                    # PSR-15 中间件
 │   ├── MiddlewareInterface.php
 │   ├── MiddlewareDispatcher.php
-│   ├── MiddlewarePipeline.php
-│   ├── PipelineRunner.php         # 无状态可重入执行游标
+│   ├── MiddlewarePipeline.php      # 首次 handle 预编译为闭包链（洋葱模型），零逐请求分配
 │   ├── CallableMiddleware.php
 │   ├── CorsMiddleware.php
 │   ├── RateLimitMiddleware.php
