@@ -14,7 +14,9 @@ use Psr\Http\Message\StreamInterface;
  * 实现了 PSR-7 ResponseInterface，规范了 HTTP 响应的所有属性，
  * 包括状态码、原因短语、头部、协议版本和消息体。
  *
- * 响应类是不可变的，所有修改操作都返回新的实例。
+ * 自 v3.4 起，响应对象为**可变**：所有 with* 方法原地修改自身并返回 `$this`
+ * （仿 webman / hyperf），中间件管道中逐层改消息不再产生逐次对象分配。
+ * 如需独立快照，请在使用前 clone。
  *
  * @example
  * ```php
@@ -154,18 +156,21 @@ class Response implements ResponseInterface
     }
 
     /**
-     * 返回具有指定状态码和原因短语的克隆
+     * 原地设置状态码与原因短语，并返回自身
+     *
+     * 自 v3.4 起，消息对象为可变（仿 webman / hyperf）：所有 with* 方法
+     * 直接修改自身并返回 `$this`，不再克隆。这样在中间件管道中逐层改消息
+     * 时不再产生逐次对象分配。
      *
      * @param int $code 新的状态码
      * @param string $reasonPhrase 新的原因短语，空字符串自动获取
-     * @return static 新的响应实例
+     * @return static 自身
      */
     public function withStatus(int $code, string $reasonPhrase = ''): static
     {
-        $clone = clone $this;
-        $clone->statusCode = $code;
-        $clone->reasonPhrase = $reasonPhrase ?: (self::$reasonPhrases[$code] ?? '');
-        return $clone;
+        $this->statusCode = $code;
+        $this->reasonPhrase = $reasonPhrase ?: (self::$reasonPhrases[$code] ?? '');
+        return $this;
     }
 
     /**
@@ -179,28 +184,26 @@ class Response implements ResponseInterface
     }
 
     /**
-     * 返回具有指定协议版本的克隆
+     * 原地设置协议版本，并返回自身
      *
      * @param string $version 新的协议版本
-     * @return static 新的响应实例
+     * @return static 自身
      */
     public function withProtocolVersion(string $version): static
     {
-        $clone = clone $this;
-        $clone->protocolVersion = $version;
-        return $clone;
+        $this->protocolVersion = $version;
+        return $this;
     }
 
     /**
-     * 返回具有指定消息体的克隆
+     * 原地设置消息体，并返回自身
      *
      * @param StreamInterface $body 新的消息体
-     * @return static 新的响应实例
+     * @return static 自身
      */
     public function withBody(StreamInterface $body): static
     {
-        $clone = clone $this;
-        $clone->body = $body;
-        return $clone;
+        $this->body = $body;
+        return $this;
     }
 }

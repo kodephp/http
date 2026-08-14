@@ -40,7 +40,8 @@ class ResponseTest extends TestCase
     {
         $response = new Response();
         $newResponse = $response->withStatus(404);
-        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertSame($response, $newResponse, 'withStatus 应原地修改并返回自身');
+        $this->assertEquals(404, $response->getStatusCode());
         $this->assertEquals(404, $newResponse->getStatusCode());
         $this->assertEquals('Not Found', $newResponse->getReasonPhrase());
     }
@@ -83,7 +84,8 @@ class ResponseTest extends TestCase
     {
         $response = new Response();
         $newResponse = $response->withHeader('X-Custom', 'value');
-        $this->assertFalse($response->hasHeader('X-Custom'));
+        $this->assertSame($response, $newResponse);
+        $this->assertTrue($response->hasHeader('X-Custom'));
         $this->assertTrue($newResponse->hasHeader('X-Custom'));
         $this->assertEquals(['value'], $newResponse->getHeader('X-Custom'));
     }
@@ -99,7 +101,8 @@ class ResponseTest extends TestCase
     {
         $response = new Response(200, ['X-Custom' => 'value']);
         $newResponse = $response->withoutHeader('X-Custom');
-        $this->assertTrue($response->hasHeader('X-Custom'));
+        $this->assertSame($response, $newResponse);
+        $this->assertFalse($response->hasHeader('X-Custom'));
         $this->assertFalse($newResponse->hasHeader('X-Custom'));
     }
 
@@ -114,7 +117,8 @@ class ResponseTest extends TestCase
     {
         $response = new Response();
         $newResponse = $response->withProtocolVersion('2.0');
-        $this->assertEquals('1.1', $response->getProtocolVersion());
+        $this->assertSame($response, $newResponse);
+        $this->assertEquals('2.0', $response->getProtocolVersion());
         $this->assertEquals('2.0', $newResponse->getProtocolVersion());
     }
 
@@ -123,8 +127,10 @@ class ResponseTest extends TestCase
         $response = new Response();
         $newResponse = $response->withHeader('X-Custom', 'value');
 
-        $this->assertNotSame($response, $newResponse);
-        $this->assertTrue($response !== $newResponse);
+        // v3.4 起消息为可变：with* 返回自身，原对象被原地修改
+        $this->assertSame($response, $newResponse, '可变消息：withHeader 应返回自身');
+        $this->assertTrue($response === $newResponse);
+        $this->assertTrue($response->hasHeader('X-Custom'));
     }
 
     public function testAllStandardStatusCodes(): void

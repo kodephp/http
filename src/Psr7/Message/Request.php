@@ -116,53 +116,52 @@ class Request implements RequestInterface
     }
 
     /**
-     * 返回具有指定请求目标的克隆
+     * 原地设置请求目标，并返回自身
      *
      * @param string|null $requestTarget 新的请求目标
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withRequestTarget(?string $requestTarget): static
     {
-        $clone = clone $this;
-        $clone->requestTarget = $requestTarget;
-        return $clone;
+        $this->requestTarget = $requestTarget;
+        return $this;
     }
 
     /**
-     * 返回具有指定方法的克隆
+     * 原地设置方法，并返回自身
      *
      * @param string $method 新的 HTTP 方法
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withMethod(string $method): static
     {
-        $clone = clone $this;
-        $clone->method = $method;
-        return $clone;
+        $this->method = $method;
+        return $this;
     }
 
     /**
-     * 返回具有指定 URI 的克隆
+     * 原地设置 URI，并返回自身
+     *
+     * 自 v3.4 起消息为可变：直接修改自身。Host 头按 {@see updateHostHeader} 同步更新。
      *
      * @param UriInterface $uri 新的 URI 对象
      * @param bool $preserveHost 是否保留原始 Host 头
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withUri(UriInterface $uri, bool $preserveHost = false): static
     {
-        $clone = clone $this;
-        $clone->uri = $uri;
+        $this->uri = $uri;
 
         if ($preserveHost && $this->hasHeader('Host')) {
-            return $clone;
+            return $this;
         }
 
         $host = $uri->getHost();
         if ($host !== '') {
-            $clone->updateHostHeader($host, $uri->getPort());
+            $this->updateHostHeader($host, $uri->getPort());
         }
 
-        return $clone;
+        return $this;
     }
 
     /**
@@ -176,28 +175,26 @@ class Request implements RequestInterface
     }
 
     /**
-     * 返回具有指定协议版本的克隆
+     * 原地设置协议版本，并返回自身
      *
      * @param string $version 新的协议版本
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withProtocolVersion(string $version): static
     {
-        $clone = clone $this;
-        $clone->protocolVersion = $version;
-        return $clone;
+        $this->protocolVersion = $version;
+        return $this;
     }
 
     /**
-     * 返回具有指定消息体的克隆
+     * 原地设置消息体，并返回自身
      *
      * @param StreamInterface $body 新的消息体
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withBody(StreamInterface $body): static
     {
-        $clone = clone $this;
-        $clone->body = $body;
-        return $clone;
+        $this->body = $body;
+        return $this;
     }
 }

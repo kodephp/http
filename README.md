@@ -220,14 +220,12 @@ $app->serve(8080);
 
 ## PSR-15 中间件
 
-> v3.0 起中间件管道为**无状态、可重入**实现（`MiddlewarePipeline` + `PipelineRunner`），
-> 同一实例可在 Swoole 协程 / Fiber 并发环境下安全复用，不再持有请求级可变索引。
+> v3.4 起中间件管道为**无状态、可重入、零逐请求分配**实现：`MiddlewarePipeline` 在首次 `handle()` 时将中间件栈**预编译**为一个内部闭包链（洋葱模型），之后每请求直接复用，不再逐层 `new` 游标、不再有递归调用栈。管道对象本身只持有「中间件栈 + 最终处理器」，同一实例可在 Swoole 协程 / Fiber 并发环境下安全复用。
 
 | 中间件 | 说明 |
 |--------|------|
 | `MiddlewareDispatcher` | 核心中间件调度器，管理中间件栈并执行调度 |
-| `MiddlewarePipeline` | 无状态管道实现，支持链式中间件调用 |
-| `PipelineRunner` | 每次 dispatch 创建独立执行游标（可重入） |
+| `MiddlewarePipeline` | 无状态管道实现，首次 handle 预编译闭包链、支持链式调用 |
 | `CallableMiddleware` | 将可调用对象转换为中间件 |
 | `CorsMiddleware` | CORS 跨域处理 |
 | `RateLimitMiddleware` | 请求限流 |
@@ -453,6 +451,7 @@ kode/http
 
 ## 版本历史
 
+- **v3.4.0** - 性能重构（落地框架侧三方案）：**B** `MiddlewarePipeline` 预编译为闭包链、零逐请求分配（删除 `PipelineRunner`）；**C** `RouteRunner` 按路由缓存已解析 handler + 路由级管道；**A** 请求/响应消息改为**可变**（`with*` 原地修改并返回自身，仿 webman / hyperf），移除 PSR-7 不可变语义。详见 `CHANGELOG.md`
 - **v3.3.0** - **合并 Response 工厂与真实 PSR-7**：`Kode\Http\Response` 现在直接继承 `Psr7\Message\Response`，`json()`/`error()`/`success()`/`fail()` 返回的就是真实 PSR-7 响应，中间件/处理器可 `return Response::json(...)` 而无需 `->send()`（保留为向后兼容空操作）；Cookie 走 `Set-Cookie` 头、链式辅助方法（cookie/withCors/withSecurity…）全部保留；`MiddlewarePipeline` 出管道时经 `Response::resolve()` 归一化
 - **v3.2.0** - 接入最新版 `kode/facade`(^3.2) 与 `kode/queue`(^2.2)：`Kode` 实现 PSR-11 容器并接入 `FacadeProxy`（context-safe 协程安全服务解析），新增 `Support/ServiceFacade` 基础门面；新增 `Queue/Queue` 门面封装（按请求 Context 作用域收集、响应后统一派发、未配置优雅降级）与 `Integration/QueueMiddleware`；所有 kode 依赖锁定到最新稳定版
 - **v3.1.0** - 全面接入最新版 kode 生态：`kode/context` 升到 `^3.1`、`kode/exception` 升到 `^3.0`，并接入 `kode/fibers`(^4.10)/`kode/parallel`(^1.18)/`kode/process`(^5.2)；`Integration` 中间件改用最新版并发/进程引擎（Fibers 门面优先，parallel/process 可用时接管）并保留优雅降级；`Request` 将入站 `X-Request-Id`/`traceparent`/`X-Trace-Id` 写入 `kode/context` 3.x 链路追踪；`JsonErrorHandlerMiddleware` 透传 `X-Trace-Id`/`X-Span-Id` 链路头；修复 `extension_loaded('fibers')` 误判导致 Fiber 任务不执行的问题

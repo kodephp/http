@@ -40,7 +40,8 @@ class RequestTest extends TestCase
     {
         $request = new Request('GET', '/');
         $newRequest = $request->withMethod('POST');
-        $this->assertEquals('GET', $request->getMethod());
+        $this->assertSame($request, $newRequest, 'withMethod 应原地修改并返回自身');
+        $this->assertEquals('POST', $request->getMethod());
         $this->assertEquals('POST', $newRequest->getMethod());
     }
 
@@ -49,7 +50,8 @@ class RequestTest extends TestCase
         $request = new Request('GET', '/');
         $newUri = new Uri('/new-path');
         $newRequest = $request->withUri($newUri);
-        $this->assertEquals('/', $request->getUri()->getPath());
+        $this->assertSame($request, $newRequest);
+        $this->assertEquals('/new-path', $request->getUri()->getPath());
         $this->assertEquals('/new-path', $newRequest->getUri()->getPath());
     }
 
@@ -98,7 +100,8 @@ class RequestTest extends TestCase
     {
         $request = new Request('GET', '/', ['X-Custom' => 'value']);
         $newRequest = $request->withoutHeader('X-Custom');
-        $this->assertTrue($request->hasHeader('X-Custom'));
+        $this->assertSame($request, $newRequest);
+        $this->assertFalse($request->hasHeader('X-Custom'));
         $this->assertFalse($newRequest->hasHeader('X-Custom'));
     }
 
@@ -113,7 +116,8 @@ class RequestTest extends TestCase
     {
         $request = new Request('GET', '/');
         $newRequest = $request->withProtocolVersion('2.0');
-        $this->assertEquals('1.1', $request->getProtocolVersion());
+        $this->assertSame($request, $newRequest);
+        $this->assertEquals('2.0', $request->getProtocolVersion());
         $this->assertEquals('2.0', $newRequest->getProtocolVersion());
     }
 
@@ -122,8 +126,10 @@ class RequestTest extends TestCase
         $request = new Request('GET', '/', ['Content-Type' => 'application/json']);
         $newRequest = $request->withHeader('X-Custom', 'value');
 
-        $this->assertNotSame($request, $newRequest);
-        $this->assertTrue($request !== $newRequest);
+        // v3.4 起消息为可变：with* 返回自身，原对象被原地修改
+        $this->assertSame($request, $newRequest, '可变消息：withHeader 应返回自身');
+        $this->assertTrue($request === $newRequest);
+        $this->assertTrue($request->hasHeader('X-Custom'));
     }
 
     public function testUriWithHostUpdatesHostHeader(): void

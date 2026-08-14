@@ -15,6 +15,9 @@ use Psr\Http\Message\UriInterface;
  * 继承了 Request 类，并添加了与服务端相关的属性，
  * 如服务器参数、Cookie、查询参数、上传文件、解析后的请求体等。
  *
+ * 自 v3.4 起，请求对象为**可变**：所有 with* 方法原地修改自身并返回 `$this`
+ * （仿 webman / hyperf）。如需独立快照，请在使用前 clone。
+ *
  * 实现了 PSR-7 ServerRequestInterface。
  *
  * @example
@@ -149,53 +152,52 @@ class ServerRequest implements ServerRequestInterface
     }
 
     /**
-     * 返回具有指定请求目标的克隆
+     * 原地设置请求目标，并返回自身
      *
      * @param string|null $requestTarget 新的请求目标
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withRequestTarget(?string $requestTarget): static
     {
-        $clone = clone $this;
-        $clone->requestTarget = $requestTarget;
-        return $clone;
+        $this->requestTarget = $requestTarget;
+        return $this;
     }
 
     /**
-     * 返回具有指定方法的克隆
+     * 原地设置方法，并返回自身
      *
      * @param string $method 新的 HTTP 方法
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withMethod(string $method): static
     {
-        $clone = clone $this;
-        $clone->method = $method;
-        return $clone;
+        $this->method = $method;
+        return $this;
     }
 
     /**
-     * 返回具有指定 URI 的克隆
+     * 原地设置 URI，并返回自身
+     *
+     * 自 v3.4 起消息为可变：直接修改自身，Host 头同步更新。
      *
      * @param UriInterface $uri 新的 URI
      * @param bool $preserveHost 是否保留 Host 头
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withUri(UriInterface $uri, bool $preserveHost = false): static
     {
-        $clone = clone $this;
-        $clone->uri = $uri;
+        $this->uri = $uri;
 
         if ($preserveHost && $this->hasHeader('Host')) {
-            return $clone;
+            return $this;
         }
 
         $host = $uri->getHost();
         if ($host !== '') {
-            $clone->updateHostHeader($host, $uri->getPort());
+            $this->updateHostHeader($host, $uri->getPort());
         }
 
-        return $clone;
+        return $this;
     }
 
     /**
@@ -209,29 +211,27 @@ class ServerRequest implements ServerRequestInterface
     }
 
     /**
-     * 返回具有指定协议版本的克隆
+     * 原地设置协议版本，并返回自身
      *
      * @param string $version 新的协议版本
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withProtocolVersion(string $version): static
     {
-        $clone = clone $this;
-        $clone->protocolVersion = $version;
-        return $clone;
+        $this->protocolVersion = $version;
+        return $this;
     }
 
     /**
-     * 返回具有指定消息体的克隆
+     * 原地设置消息体，并返回自身
      *
      * @param StreamInterface $body 新的消息体
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withBody(StreamInterface $body): static
     {
-        $clone = clone $this;
-        $clone->body = $body;
-        return $clone;
+        $this->body = $body;
+        return $this;
     }
 
     /**
@@ -257,16 +257,15 @@ class ServerRequest implements ServerRequestInterface
     }
 
     /**
-     * 返回具有指定 Cookie 参数的克隆
+     * 原地设置 Cookie 参数，返回自身
      *
      * @param array $cookies 新的 Cookie 参数
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withCookieParams(array $cookies): static
     {
-        $clone = clone $this;
-        $clone->cookieParams = $cookies;
-        return $clone;
+        $this->cookieParams = $cookies;
+        return $this;
     }
 
     /**
@@ -282,16 +281,15 @@ class ServerRequest implements ServerRequestInterface
     }
 
     /**
-     * 返回具有指定查询参数的克隆
+     * 原地设置查询参数，返回自身
      *
      * @param array $query 新的查询参数
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withQueryParams(array $query): static
     {
-        $clone = clone $this;
-        $clone->queryParams = $query;
-        return $clone;
+        $this->queryParams = $query;
+        return $this;
     }
 
     /**
@@ -305,16 +303,15 @@ class ServerRequest implements ServerRequestInterface
     }
 
     /**
-     * 返回具有指定上传文件信息的克隆
+     * 原地设置上传文件信息，返回自身
      *
      * @param array $uploadedFiles 新的上传文件信息
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withUploadedFiles(array $uploadedFiles): static
     {
-        $clone = clone $this;
-        $clone->uploadedFiles = $uploadedFiles;
-        return $clone;
+        $this->uploadedFiles = $uploadedFiles;
+        return $this;
     }
 
     /**
@@ -330,16 +327,15 @@ class ServerRequest implements ServerRequestInterface
     }
 
     /**
-     * 返回具有指定解析后请求体的克隆
+     * 原地设置解析后请求体，返回自身
      *
      * @param mixed $data 新的解析后请求体
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withParsedBody(mixed $data): static
     {
-        $clone = clone $this;
-        $clone->parsedBody = $data;
-        return $clone;
+        $this->parsedBody = $data;
+        return $this;
     }
 
     /**
@@ -367,29 +363,27 @@ class ServerRequest implements ServerRequestInterface
     }
 
     /**
-     * 返回具有指定属性的克隆
+     * 原地设置属性，返回自身
      *
      * @param string $name 属性名
      * @param mixed $value 属性值
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withAttribute(string $name, mixed $value): static
     {
-        $clone = clone $this;
-        $clone->attributes[$name] = $value;
-        return $clone;
+        $this->attributes[$name] = $value;
+        return $this;
     }
 
     /**
-     * 返回移除指定属性的克隆
+     * 原地移除属性，返回自身
      *
      * @param string $name 要移除的属性名
-     * @return static 新的请求实例
+     * @return static 自身
      */
     public function withoutAttribute(string $name): static
     {
-        $clone = clone $this;
-        unset($clone->attributes[$name]);
-        return $clone;
+        unset($this->attributes[$name]);
+        return $this;
     }
 }

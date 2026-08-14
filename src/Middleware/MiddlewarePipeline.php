@@ -11,11 +11,18 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 /**
- * 中间件管道（无状态、可重入）
+ * 中间件管道（无状态、可重入、零逐请求分配）
  *
- * 每次 handle() 都会创建一个独立的执行游标（Runner），管道对象本身不持有
- * 任何请求级可变状态。因此同一个管道实例可以被重复调用，
- * 也可以在 Swoole 协程 / Fiber 并发场景下安全共享。
+ * 管道对象本身只持有「中间件栈 + 最终处理器」，不持有任何请求级可变状态，
+ * 因此同一个实例可以被重复调用，也可以在 Swoole 协程 / Fiber 并发场景下安全共享。
+ *
+ * 自 v3.4 起，管道在首次 {@see handle()} 时将中间件栈**预编译**为一个内部的
+ * {@see RequestHandlerInterface} 闭包链（洋葱模型）：编译只发生一次，之后每请求
+ * 直接 `$compiled->handle($request)`，不再逐层 new 游标、不再有递归调用栈，
+ * 把每请求的中间件调度开销降到最低。
+ *
+ * 任一 `pipe` / `prepend` / `pipeAll` / `withFinalHandler` 改变栈结构时，
+ * 缓存的编译结果会被置空，下次 handle() 重新编译。
  *
  * @example
  * ```php
@@ -33,6 +40,14 @@ class MiddlewarePipeline implements RequestHandlerInterface
     /** @var RequestHandlerInterface 最终处理器 */
     protected RequestHandlerInterface $finalHandler;
 
+    /**
+     * 预编译后的闭包链（首次 handle 时构建，之后复用）。
+     *
+     * 编译结果只捕获「中间件栈 + 最终处理器」这两个不可变引用，
+     * 因此管道在编译后依旧无状态，可安全跨协程共享。
+     */
+    private ?RequestHandlerInterface $compiled = null;
+
     public function __construct(RequestHandlerInterface $finalHandler)
     {
         $this->finalHandler = $finalHandler;
@@ -46,6 +61,8 @@ class MiddlewarePipeline implements RequestHandlerInterface
         $this->middlewares[] = $middleware instanceof MiddlewareInterface
             ? $middleware
             : new CallableMiddleware($middleware);
+
+        $this->compiled = null;
 
         return $this;
     }
@@ -74,11 +91,13 @@ class MiddlewarePipeline implements RequestHandlerInterface
             $middleware instanceof MiddlewareInterface ? $middleware : new CallableMiddleware($middleware)
         );
 
+        $this->compiled = null;
+
         return $this;
     }
 
     /**
-     * 处理请求：为本次调用创建独立游标
+     * 处理请求：首次调用预编译闭包链，之后直接复用
      *
      * 无论中间件或最终处理器返回的是工厂 {@see Response}、PSR-7 响应、
      * 数组还是字符串，出管道时都会被 {@see Response::resolve()} 归一化为
@@ -87,9 +106,41 @@ class MiddlewarePipeline implements RequestHandlerInterface
      */
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        return Response::resolve(
-            (new PipelineRunner($this->middlewares, $this->finalHandler))->handle($request)
-        );
+        if ($this->compiled === null) {
+            $this->compile();
+        }
+
+        return Response::resolve($this->compiled->handle($request));
+    }
+
+    /**
+     * 将中间件栈预编译为一个内部 RequestHandler 闭包链。
+     *
+     * 从最内层（最终处理器）向外逐层包裹：最后一个注册的中间件在最外层。
+     * 编译产物只持有中间件与 next 的引用，无请求级状态。
+     */
+    private function compile(): void
+    {
+        /** @var RequestHandlerInterface $handler */
+        $handler = $this->finalHandler;
+
+        foreach (array_reverse($this->middlewares) as $middleware) {
+            $next = $handler;
+            $handler = new class($middleware, $next) implements RequestHandlerInterface {
+                public function __construct(
+                    private readonly MiddlewareInterface $middleware,
+                    private readonly RequestHandlerInterface $next,
+                ) {
+                }
+
+                public function handle(ServerRequestInterface $request): ResponseInterface
+                {
+                    return $this->middleware->process($request, $this->next);
+                }
+            };
+        }
+
+        $this->compiled = $handler;
     }
 
     /**
@@ -114,12 +165,13 @@ class MiddlewarePipeline implements RequestHandlerInterface
     }
 
     /**
-     * 返回一个替换了最终处理器的副本
+     * 返回一个替换了最终处理器的副本（编译缓存一并重置）
      */
     public function withFinalHandler(RequestHandlerInterface $handler): static
     {
         $clone = clone $this;
         $clone->finalHandler = $handler;
+        $clone->compiled = null;
         return $clone;
     }
 }

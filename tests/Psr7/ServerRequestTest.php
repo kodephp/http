@@ -36,7 +36,8 @@ class ServerRequestTest extends TestCase
     {
         $request = new ServerRequest('GET', '/');
         $newRequest = $request->withCookieParams(['token' => 'xyz']);
-        $this->assertEquals([], $request->getCookieParams());
+        $this->assertSame($request, $newRequest, 'withCookieParams 应原地修改并返回自身');
+        $this->assertEquals(['token' => 'xyz'], $request->getCookieParams());
         $this->assertEquals(['token' => 'xyz'], $newRequest->getCookieParams());
     }
 
@@ -111,7 +112,8 @@ class ServerRequestTest extends TestCase
     {
         $request = new ServerRequest('GET', '/');
         $newRequest = $request->withAttribute('key', 'value');
-        $this->assertNull($request->getAttribute('key'));
+        $this->assertSame($request, $newRequest);
+        $this->assertEquals('value', $request->getAttribute('key'));
         $this->assertEquals('value', $newRequest->getAttribute('key'));
     }
 
@@ -120,7 +122,8 @@ class ServerRequestTest extends TestCase
         $request = new ServerRequest('GET', '/');
         $request = $request->withAttribute('temp', 'data');
         $newRequest = $request->withoutAttribute('temp');
-        $this->assertEquals('data', $request->getAttribute('temp'));
+        $this->assertSame($request, $newRequest);
+        $this->assertNull($request->getAttribute('temp'));
         $this->assertNull($newRequest->getAttribute('temp'));
     }
 
@@ -129,8 +132,9 @@ class ServerRequestTest extends TestCase
         $request = new ServerRequest('GET', '/', [], ['Content-Type' => 'text/plain']);
         $newRequest = $request->withHeader('X-Custom', 'value');
 
-        $this->assertNotSame($request, $newRequest);
-        $this->assertFalse($request->hasHeader('X-Custom'));
+        // v3.4 起消息为可变：with* 返回自身，原对象被原地修改
+        $this->assertSame($request, $newRequest, '可变消息：withHeader 应返回自身');
+        $this->assertTrue($request->hasHeader('X-Custom'));
         $this->assertTrue($newRequest->hasHeader('X-Custom'));
     }
 }

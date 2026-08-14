@@ -32,6 +32,16 @@ final class RouteRunner implements RequestHandlerInterface
     /** @var (callable(ServerRequestInterface, list<string>): mixed)|null 自定义 405 处理器 */
     private $methodNotAllowedHandler = null;
 
+    /**
+     * 已编译的路由处理器缓存（按 spl_object_id(Route) 索引）
+     *
+     * 缓存「已解析的 handler + 路由级中间件管道」，避免每请求重复反射 /
+     * 实例化控制器 / 重建管道。路由对象在启动期注册且稳定，因此缓存有界。
+     *
+     * @var array<int, RequestHandlerInterface>
+     */
+    private array $compiled = [];
+
     public function __construct(private readonly Router $router)
     {
     }
@@ -78,18 +88,48 @@ final class RouteRunner implements RequestHandlerInterface
 
         Request::setRequest($request);
 
+        return $this->dispatchRoute($route, $request);
+    }
+
+    /**
+     * 派发路由处理器，命中缓存则直接复用已编译的管道。
+     */
+    private function dispatchRoute(Route $route, ServerRequestInterface $request): ResponseInterface
+    {
+        $id = spl_object_id($route);
+        if (!isset($this->compiled[$id])) {
+            $this->compiled[$id] = $this->compileRoute($route);
+        }
+
+        return $this->compiled[$id]->handle($request);
+    }
+
+    /**
+     * 编译单条路由：解析 handler + 构造目标处理器 + 组装路由级中间件管道。
+     *
+     * 目标闭包从请求属性 `_route_params` 读取参数，使管道可跨请求复用。
+     * 解析结果按路由对象缓存，避免每请求重复反射 / 实例化控制器。
+     *
+     * 注意：缓存的 handler 可跨请求复用（含控制器实例），因此路由处理器
+     * 须保持无状态——这与 webman / hyperf 的单例控制器模型一致。
+     *
+     * @return RequestHandlerInterface
+     */
+    private function compileRoute(Route $route): RequestHandlerInterface
+    {
+        $callable = self::toCallable($route->getHandler());
+
         $target = new CallableHandler(
-            fn(ServerRequestInterface $req): ResponseInterface => Response::resolve(
-                self::invoke($route->getHandler(), $req, $result->params)
-            )
+            static fn(ServerRequestInterface $req): ResponseInterface =>
+                Response::resolve($callable($req, $req->getAttribute('_route_params', [])))
         );
 
         $middlewares = $route->getMiddlewares();
         if ($middlewares === []) {
-            return $target->handle($request);
+            return $target;
         }
 
-        return (new MiddlewarePipeline($target))->pipeAll($middlewares)->handle($request);
+        return (new MiddlewarePipeline($target))->pipeAll($middlewares);
     }
 
     /**

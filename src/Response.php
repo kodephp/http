@@ -12,7 +12,7 @@ use Psr\Http\Message\StreamInterface;
  * 统一响应构建器（同时是真实的 PSR-7 响应）
  *
  * 借鉴 Laravel/ThinkPHP 的链式设计，提供流畅的响应构建体验，
- * 完全兼容 PSR-7。所有 with/set 类方法均返回新实例（不可变）。
+ * 完全兼容 PSR-7。所有 with/set 类方法均原地修改自身并返回 `$this`（自 v3.4 起为可变，仿 webman / hyperf）。
  *
  * 自 v3.3 起，`Kode\Http\Response` **直接继承**真实 PSR-7 实现
  * （{@see \Kode\Http\Psr7\Message\Response}），工厂方法与辅助方法都落在同一类上：

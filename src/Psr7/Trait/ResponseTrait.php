@@ -51,45 +51,42 @@ trait ResponseTrait
 
     public function withHeader(string $name, $value): static
     {
-        $clone = clone $this;
         $normalizedName = $this->normalizeHeaderName($name);
 
         if (is_array($value)) {
-            $clone->headers[$name] = $value;
+            $this->headers[$name] = $value;
         } else {
-            $clone->headers[$name] = [$value];
+            $this->headers[$name] = [$value];
         }
 
-        $clone->headerNames[$normalizedName] = $name;
+        $this->headerNames[$normalizedName] = $name;
 
-        return $clone;
+        return $this;
     }
 
     public function withAddedHeader(string $name, $value): static
     {
-        $clone = clone $this;
         $normalizedName = $this->normalizeHeaderName($name);
 
         if (is_array($value)) {
-            $clone->headers[$name] = array_merge($clone->headers[$name] ?? [], $value);
+            $this->headers[$name] = array_merge($this->headers[$name] ?? [], $value);
         } else {
-            $clone->headers[$name][] = $value;
+            $this->headers[$name][] = $value;
         }
 
-        $clone->headerNames[$normalizedName] = $name;
+        $this->headerNames[$normalizedName] = $name;
 
-        return $clone;
+        return $this;
     }
 
     public function withoutHeader(string $name): static
     {
-        $clone = clone $this;
         $normalizedName = $this->normalizeHeaderName($name);
         $originalName = $this->headerNames[$normalizedName] ?? $name;
 
-        unset($clone->headers[$originalName], $clone->headerNames[$normalizedName]);
+        unset($this->headers[$originalName], $this->headerNames[$normalizedName]);
 
-        return $clone;
+        return $this;
     }
 
     public function getBody(): StreamInterface
