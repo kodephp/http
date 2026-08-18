@@ -12,6 +12,8 @@ trait RequestTrait
     protected array $headers = [];
     protected array $headerNames = [];
     protected ?StreamInterface $body = null;
+    /** @var string|null 原始字符串体；非空时 getBody() 才物化为 Stream，避免每请求分配 */
+    protected ?string $rawBody = null;
 
     protected function initializeHeaders(array $headers): void
     {
@@ -102,7 +104,15 @@ trait RequestTrait
 
     public function getBody(): StreamInterface
     {
-        return $this->body ?? Stream::create('');
+        if ($this->body !== null) {
+            return $this->body;
+        }
+        if ($this->rawBody !== null) {
+            $this->body = Stream::create($this->rawBody);
+            $this->rawBody = null;
+            return $this->body;
+        }
+        return $this->body = Stream::create('');
     }
 
     protected function normalizeHeaderName(string $name): string

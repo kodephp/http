@@ -28,7 +28,7 @@ use Psr\Container\ContainerExceptionInterface;
 class Kode implements ContainerInterface
 {
     /** @var string 版本号 */
-    public const VERSION = '3.4.0';
+    public const VERSION = '3.4.1';
 
     /** @var array<string, mixed> 全局配置 */
     protected static array $config = [];
@@ -171,12 +171,11 @@ class Kode implements ContainerInterface
      * @param int $status HTTP 状态码
      * @param string $body 响应体
      * @param array<string, string|string[]> $headers 响应头
-     * @return \Kode\Http\Psr7\Message\Response
+     * @return \Kode\Http\Response
      */
-    public static function response(int $status = 200, string $body = '', array $headers = []): \Kode\Http\Psr7\Message\Response
+    public static function response(int $status = 200, string $body = '', array $headers = []): \Kode\Http\Response
     {
-        $stream = \Kode\Http\Psr7\Stream::create($body);
-        return new \Kode\Http\Psr7\Message\Response($status, $headers, $stream);
+        return new \Kode\Http\Response($status, $headers, $body);
     }
 
     /**
@@ -184,9 +183,9 @@ class Kode implements ContainerInterface
      *
      * @param array $data JSON 数据
      * @param int $status HTTP 状态码
-     * @return \Kode\Http\Psr7\Message\Response
+     * @return \Kode\Http\Response
      */
-    public static function json(array $data, int $status = 200): \Kode\Http\Psr7\Message\Response
+    public static function json(array $data, int $status = 200): \Kode\Http\Response
     {
         $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         return self::response($status, $json, ['Content-Type' => 'application/json']);

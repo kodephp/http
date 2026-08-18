@@ -85,7 +85,7 @@ class ServerRequest implements ServerRequestInterface
         UriInterface|string $uri,
         array $serverParams = [],
         array $headers = [],
-        ?StreamInterface $body = null,
+        StreamInterface|string|null $body = null,
         string $protocolVersion = '1.1'
     ) {
         $this->method = $method;
@@ -99,7 +99,13 @@ class ServerRequest implements ServerRequestInterface
         $this->attributes = [];
 
         $this->initializeHeaders($headers);
-        $this->body = $body;
+        if ($body === null) {
+            $this->rawBody = '';
+        } elseif (is_string($body)) {
+            $this->rawBody = $body;
+        } else {
+            $this->body = $body;
+        }
 
         $host = $this->uri->getHost();
         if ($host !== '' && !$this->hasHeader('Host')) {
@@ -231,6 +237,7 @@ class ServerRequest implements ServerRequestInterface
     public function withBody(StreamInterface $body): static
     {
         $this->body = $body;
+        $this->rawBody = null;
         return $this;
     }
 

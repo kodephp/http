@@ -36,6 +36,12 @@ final class Emitter
             return;
         }
 
+        // 快速路径：kode 自有响应若仍持有原始字符串体，直接写出，跳过 Stream 物化与分块读取
+        if ($response instanceof Response && $response->hasRawBody()) {
+            echo $response->getRawBody();
+            return;
+        }
+
         self::emitBody($response);
     }
 

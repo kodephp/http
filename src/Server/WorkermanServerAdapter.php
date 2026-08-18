@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Kode\Http\Server;
 
 use Kode\Http\Psr7\Message\ServerRequest;
-use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
 
 class WorkermanServerAdapter
@@ -45,7 +44,7 @@ class WorkermanServerAdapter
             $headers[$name] = [$value];
         }
 
-        $body = Stream::create($request->rawBody() ?: '');
+        $body = $request->rawBody() ?: '';
 
         $serverParams = [];
         foreach ($request->server ?? [] as $key => $value) {

@@ -123,7 +123,7 @@ class Response implements ResponseInterface
     public function __construct(
         int $statusCode = 200,
         array $headers = [],
-        ?StreamInterface $body = null,
+        StreamInterface|string|null $body = null,
         string $protocolVersion = '1.1',
         string $reasonPhrase = ''
     ) {
@@ -132,7 +132,13 @@ class Response implements ResponseInterface
         $this->reasonPhrase = $reasonPhrase ?: (self::$reasonPhrases[$statusCode] ?? '');
 
         $this->initializeHeaders($headers);
-        $this->body = $body ?? Stream::create('');
+        if ($body === null) {
+            $this->rawBody = '';
+        } elseif (is_string($body)) {
+            $this->rawBody = $body;
+        } else {
+            $this->body = $body;
+        }
     }
 
     /**
@@ -204,6 +210,7 @@ class Response implements ResponseInterface
     public function withBody(StreamInterface $body): static
     {
         $this->body = $body;
+        $this->rawBody = null;
         return $this;
     }
 }

@@ -457,6 +457,7 @@ kode/http
 
 ## 版本历史
 
+- **v3.4.1** - 性能：懒原始体（lazy raw-body）+ Emitter 快速路径。消息构造函数与 `getBody()` 加宽为 `StreamInterface|string|null`，传入 `string` 仅存 `rawBody`、`getBody()` 按需懒物化 `Stream`（保持 PSR-7 契约 BC）；`Response::body()` 只存 `rawBody` 并新增 `hasRawBody()/getRawBody()`；`Emitter::emit()` 对持有 `rawBody` 的响应直接 `echo` 原始字符串、跳过 Stream 往返；全部入口（`ServerRequestFactory`/`App::listen`/`ServerRunner`/`Swoole`/`Workerman`）改为传原始字符串，消除每请求 `string → Stream → string` 无效分配。详见 `CHANGELOG.md`
 - **v3.4.0** - 性能重构（落地框架侧三方案）：**B** `MiddlewarePipeline` 预编译为闭包链、零逐请求分配（删除 `PipelineRunner`）；**C** `RouteRunner` 按路由缓存已解析 handler + 路由级管道；**A** 请求/响应消息改为**可变**（`with*` 原地修改并返回自身，仿 webman / hyperf），移除 PSR-7 不可变语义。详见 `CHANGELOG.md`
 - **v3.3.0** - **合并 Response 工厂与真实 PSR-7**：`Kode\Http\Response` 现在直接继承 `Psr7\Message\Response`，`json()`/`error()`/`success()`/`fail()` 返回的就是真实 PSR-7 响应，中间件/处理器可 `return Response::json(...)` 而无需 `->send()`（保留为向后兼容空操作）；Cookie 走 `Set-Cookie` 头、链式辅助方法（cookie/withCors/withSecurity…）全部保留；`MiddlewarePipeline` 出管道时经 `Response::resolve()` 归一化
 - **v3.2.0** - 接入最新版 `kode/facade`(^3.2) 与 `kode/queue`(^2.2)：`Kode` 实现 PSR-11 容器并接入 `FacadeProxy`（context-safe 协程安全服务解析），新增 `Support/ServiceFacade` 基础门面；新增 `Queue/Queue` 门面封装（按请求 Context 作用域收集、响应后统一派发、未配置优雅降级）与 `Integration/QueueMiddleware`；所有 kode 依赖锁定到最新稳定版

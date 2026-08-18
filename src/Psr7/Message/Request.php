@@ -52,7 +52,7 @@ class Request implements RequestInterface
         string $method,
         UriInterface|string $uri,
         array $headers = [],
-        ?StreamInterface $body = null,
+        StreamInterface|string|null $body = null,
         string $protocolVersion = '1.1'
     ) {
         $this->method = $method;
@@ -60,7 +60,13 @@ class Request implements RequestInterface
         $this->protocolVersion = $protocolVersion;
 
         $this->initializeHeaders($headers);
-        $this->body = $body;
+        if ($body === null) {
+            $this->rawBody = '';
+        } elseif (is_string($body)) {
+            $this->rawBody = $body;
+        } else {
+            $this->body = $body;
+        }
 
         $host = $this->uri->getHost();
         if ($host !== '' && !$this->hasHeader('Host')) {
@@ -195,6 +201,7 @@ class Request implements RequestInterface
     public function withBody(StreamInterface $body): static
     {
         $this->body = $body;
+        $this->rawBody = null;
         return $this;
     }
 }

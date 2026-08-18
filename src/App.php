@@ -383,7 +383,7 @@ class App implements RequestHandlerInterface
             new Psr7\Uri('http://' . $host . $target),
             ['REQUEST_METHOD' => $method, 'REQUEST_URI' => $target, 'SERVER_PROTOCOL' => 'HTTP/' . $version],
             $headers,
-            Psr7\Stream::create($body),
+            $body,
             $version
         );
 

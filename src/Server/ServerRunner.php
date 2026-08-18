@@ -154,7 +154,7 @@ class ServerRunner
             $headers['Content-Length'] = [$_SERVER['CONTENT_LENGTH']];
         }
 
-        $body = \Kode\Http\Psr7\Stream::create(file_get_contents('php://input') ?: '');
+        $body = file_get_contents('php://input') ?: '';
 
         return new \Kode\Http\Psr7\Message\ServerRequest(
             $method,

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Kode\Http\Server;
 
 use Kode\Http\Psr7\Message\ServerRequest;
-use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
 
 class SwooleServerAdapter
@@ -54,7 +53,7 @@ class SwooleServerAdapter
             $headers[$name] = [$value];
         }
 
-        $body = Stream::create($swooleRequest->rawContent() ?: '');
+        $body = $swooleRequest->rawContent() ?: '';
 
         $serverParams = $swooleRequest->server ?? [];
 

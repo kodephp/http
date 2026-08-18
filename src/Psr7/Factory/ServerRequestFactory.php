@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Kode\Http\Psr7\Factory;
 
 use Kode\Http\Psr7\Message\ServerRequest;
-use Kode\Http\Psr7\Stream;
 use Kode\Http\Psr7\UploadedFile;
 use Kode\Http\Psr7\Uri;
 use Psr\Http\Message\ServerRequestFactoryInterface;
@@ -53,7 +52,7 @@ class ServerRequestFactory implements ServerRequestFactoryInterface
         $uri = self::uriFromServer($server, $headers);
 
         $rawBody = file_get_contents('php://input');
-        $stream = Stream::create($rawBody === false ? '' : $rawBody);
+        $bodyString = $rawBody === false ? '' : $rawBody;
 
         $contentType = strtolower($headers['Content-Type'] ?? '');
         if ($body === null) {
@@ -66,7 +65,7 @@ class ServerRequestFactory implements ServerRequestFactoryInterface
 
         $protocol = str_replace('HTTP/', '', (string) ($server['SERVER_PROTOCOL'] ?? 'HTTP/1.1'));
 
-        $request = new ServerRequest($method, $uri, $server, $headers, $stream, $protocol);
+        $request = new ServerRequest($method, $uri, $server, $headers, $bodyString, $protocol);
 
         return $request
             ->withQueryParams($query)

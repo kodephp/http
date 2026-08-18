@@ -47,7 +47,7 @@ class Response extends Psr7\Message\Response
     public function __construct(
         int $statusCode = 200,
         array $headers = [],
-        ?StreamInterface $body = null,
+        StreamInterface|string|null $body = null,
         string $protocolVersion = '1.1',
         string $reasonPhrase = ''
     ) {
@@ -293,10 +293,14 @@ class Response extends Psr7\Message\Response
 
     /**
      * 设置响应体
+     *
+     * 直接缓存原始字符串，延迟到真正需要时才物化为 Stream（emit 快速路径可直接写出）。
      */
     public function body(string $body): self
     {
-        return $this->withBody(Stream::create($body));
+        $this->rawBody = $body;
+        $this->body = null;
+        return $this;
     }
 
     /**
@@ -304,7 +308,23 @@ class Response extends Psr7\Message\Response
      */
     public function getBodyString(): string
     {
-        return (string) parent::getBody();
+        return $this->rawBody ?? (string) parent::getBody();
+    }
+
+    /**
+     * 是否持有未物化的原始字符串体（用于 Emitter 快速路径）
+     */
+    public function hasRawBody(): bool
+    {
+        return $this->rawBody !== null;
+    }
+
+    /**
+     * 获取原始字符串体（未物化时直接返回，否则退回 getBody() 字符串形式）
+     */
+    public function getRawBody(): string
+    {
+        return $this->rawBody ?? (string) $this->getBody();
     }
 
     /**
