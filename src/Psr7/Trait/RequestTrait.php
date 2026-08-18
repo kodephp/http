@@ -108,8 +108,10 @@ trait RequestTrait
             return $this->body;
         }
         if ($this->rawBody !== null) {
+            // 非破坏性：物化 Stream 作为 $body 缓存，但保留 rawBody 作为字符串真相源，
+            // 使 hasRawBody()/Emitter 快速路径/getRawBody() 在任意次 getBody() 后仍可用，
+            // 杜绝「二次物化 + 缓存销毁」（kode/process::toHttp11 每请求走 getBody() 的代价）。
             $this->body = Stream::create($this->rawBody);
-            $this->rawBody = null;
             return $this->body;
         }
         return $this->body = Stream::create('');

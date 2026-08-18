@@ -108,4 +108,43 @@ final class ResponseBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         Response::jsonp(['a' => 1], 'bad-name!');
     }
+
+    /**
+     * getBody() 必须非破坏性：物化 Stream 后保留 rawBody 作为字符串真相源，
+     * 否则 hasRawBody()/Emitter 快速路径/getRawBody() 会在任意次 getBody() 后失效
+     * （kode/process::toHttp11 每请求走 getBody() 的代价）。
+     */
+    public function testGetBodyIsNonDestructiveForRawBody(): void
+    {
+        $resp = Response::json(['a' => 1])->send();
+
+        // 初始持有原始字符串体
+        $this->assertTrue($resp->hasRawBody());
+        $this->assertSame('{"a":1}', $resp->getRawBody());
+
+        // 消费者（如 toHttp11）读取一次 getBody()
+        $stream = $resp->getBody();
+        $this->assertInstanceOf(Stream::class, $stream);
+        $this->assertSame('{"a":1}', (string) $stream);
+
+        // 关键不变量：rawBody 未被销毁，快速路径与 getRawBody() 仍可用
+        $this->assertTrue($resp->hasRawBody(), 'getBody() 不应销毁 rawBody');
+        $this->assertSame('{"a":1}', $resp->getRawBody(), 'getRawBody() 应直接返回原串，无二次物化');
+
+        // 再次 getBody() 返回同一缓存 Stream（幂等）
+        $this->assertSame($stream, $resp->getBody());
+    }
+
+    /**
+     * withBody()（真正的变更入口）仍应清掉 rawBody，保持字符串/Stream 单一真相源。
+     */
+    public function testWithBodyClearsRawBody(): void
+    {
+        $resp = Response::json(['a' => 1])->send();
+        $this->assertTrue($resp->hasRawBody());
+
+        $resp->withBody(Stream::create('replaced'));
+        $this->assertFalse($resp->hasRawBody(), 'withBody() 应清掉 rawBody');
+        $this->assertSame('replaced', (string) $resp->getBody());
+    }
 }
