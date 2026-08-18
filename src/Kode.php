@@ -28,7 +28,7 @@ use Psr\Container\ContainerExceptionInterface;
 class Kode implements ContainerInterface
 {
     /** @var string 版本号 */
-    public const VERSION = '3.4.1';
+    public const VERSION = '3.4.2';
 
     /** @var array<string, mixed> 全局配置 */
     protected static array $config = [];

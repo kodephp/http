@@ -43,6 +43,14 @@ class Request
         Context::CORRELATION_ID,
     ];
 
+    /** 链路追踪来源头：守卫判定与（未来）取值共用同一份真相，杜绝清单漂移 */
+    private const array TRACE_HEADERS = [
+        'X-Request-Id',
+        'X-Trace-Id',
+        'traceparent',
+        'X-Correlation-Id',
+    ];
+
     /** @var ServerRequestInterface|null 无上下文组件时的回退存储 */
     private static ?ServerRequestInterface $fallback = null;
 
@@ -103,9 +111,18 @@ class Request
      *
      * 优先级：X-Request-Id → X-Trace-Id（请求 ID）；traceparent / X-Trace-Id（链路 ID）。
      * 使下游 KodeException、中间件可复用同一链路，实现分布式追踪对齐。
+     *
+     * 健壮性：绝大多数请求（压测 / 生产）不带任何链路头，先经 {@see hasTraceHeaders}
+     * 守卫快速返回 —— 单次仅 4 次 hasHeader 查找、无任何 Context 写入；对任意多次
+     * setRequest 调用（App::handle / RouteRunner / Request::json 等）天然幂等，
+     * 且只读写按协程隔离的 kode/context，无进程级共享状态，协程安全。
      */
     private static function syncTraceContext(ServerRequestInterface $request): void
     {
+        if (!self::hasTraceHeaders($request)) {
+            return;
+        }
+
         $requestId = $request->getHeaderLine('X-Request-Id')
             ?: $request->getHeaderLine('X-Trace-Id')
             ?: '';
@@ -124,6 +141,20 @@ class Request
         if ($correlationId !== '') {
             Context::set(Context::CORRELATION_ID, $correlationId);
         }
+    }
+
+    /**
+     * 请求是否携带任一链路追踪来源头（单一真相源，与取值逻辑共用 TRACE_HEADERS）
+     */
+    private static function hasTraceHeaders(ServerRequestInterface $request): bool
+    {
+        foreach (self::TRACE_HEADERS as $header) {
+            if ($request->hasHeader($header)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
