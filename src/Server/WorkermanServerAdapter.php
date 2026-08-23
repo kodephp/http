@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Server;
 
+use Kode\Http\Psr7\LazyUri;
 use Kode\Http\Psr7\Message\LazyServerRequest;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -33,11 +34,10 @@ class WorkermanServerAdapter
     private function convertToServerRequest($request): ServerRequestInterface
     {
         $method = $request->method ?? 'GET';
-        $uri = new \Kode\Http\Psr7\Uri($request->path ?? '/');
-
-        if (isset($request->queryString)) {
-            $uri = $uri->withQuery($request->queryString);
-        }
+        $uri = new LazyUri(
+            $request->path ?? '/',
+            $request->queryString ?? ''
+        );
 
         $headers = [];
         foreach ($request->header ?? [] as $name => $value) {

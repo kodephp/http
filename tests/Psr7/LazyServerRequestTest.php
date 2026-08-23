@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kode\Http\Tests\Psr7;
 
 use Kode\Context\Context;
+use Kode\Http\Psr7\LazyUri;
 use Kode\Http\Psr7\Message\LazyServerRequest;
 use Kode\Http\Psr7\Uri;
 use Kode\Http\Request;
@@ -27,6 +28,24 @@ class LazyServerRequestTest extends TestCase
     private function makeRequest(array $server, string $path = '/'): LazyServerRequest
     {
         return new LazyServerRequest('GET', new Uri($path), $server, [], '', '1.1');
+    }
+
+    /**
+     * 适配器实际传的就是 LazyUri：必须能在 ServerRequest 层正确取出 method / path / query，
+     * 且构造期（getHost/getPort）不抛错、不急切规范化 header。
+     */
+    public function testLazyUriDropInForAdapterPath(): void
+    {
+        $server = ['REQUEST_METHOD' => 'GET'];
+        $uri = new LazyUri('/platform/api/v1/member/login', 'token=xyz');
+        $request = new LazyServerRequest('GET', $uri, $server, [], '', '1.1');
+
+        self::assertSame('GET', $request->getMethod());
+        self::assertSame('/platform/api/v1/member/login', $request->getUri()->getPath());
+        self::assertSame('token=xyz', $request->getUri()->getQuery());
+        self::assertSame('/platform/api/v1/member/login?token=xyz', $request->getRequestTarget());
+        // 适配器不设置 host —— 构造期 getHost()=='' 不得触发 header 规范化
+        self::assertFalse($this->headersResolved($request), 'LazyUri 空 host 不触发 header 解析');
     }
 
     public function testHeadersNotResolvedUntilAccessed(): void

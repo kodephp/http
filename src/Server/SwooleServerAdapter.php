@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Server;
 
+use Kode\Http\Psr7\LazyUri;
 use Kode\Http\Psr7\Message\LazyServerRequest;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -42,11 +43,10 @@ class SwooleServerAdapter
     private function convertToServerRequest(\Swoole\Http\Request $swooleRequest): ServerRequestInterface
     {
         $method = $swooleRequest->method ?? 'GET';
-        $uri = new \Kode\Http\Psr7\Uri($swooleRequest->server['request_uri'] ?? '/');
-
-        if (isset($swooleRequest->server['query_string'])) {
-            $uri = $uri->withQuery($swooleRequest->server['query_string']);
-        }
+        $uri = new LazyUri(
+            $swooleRequest->server['request_uri'] ?? '/',
+            $swooleRequest->server['query_string'] ?? ''
+        );
 
         $headers = [];
         foreach ($swooleRequest->header ?? [] as $name => $value) {
