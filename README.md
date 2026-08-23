@@ -457,6 +457,7 @@ kode/http
 
 ## 版本历史
 
+- **v3.4.4** - 性能：热路径零 header 成本。新增 `Psr7\Message\LazyServerRequest`（继承 `ServerRequest`，可变语义 / PSR-7 契约不变），`ServerRequestFactory::fromGlobals()` 改为构建它并将 **header 规范化延迟到首次 `getHeader*` 访问**；路由（method + path）完全不触发 header 提取。`hasHeader` 在未解析时走原始源判定、不强制规范化；`Request::hasTraceHeaders` 改为扫 `server params` 的 `HTTP_*` 键（热路径零 header 成本）。微基准：`fromGlobals` 在不读 header 时由 8.68 µs → 1.41 µs/req（约 6.2×）。详见 `CHANGELOG.md`
 - **v3.4.3** - 缺陷修复：getBody() 非破坏性。`ResponseTrait`/`RequestTrait` 的 `getBody()` 物化 `Stream` 时**保留 rawBody**（去掉销毁赋值），`hasRawBody()` 在任意次 `getBody()` 后恒为真，使 `Emitter` 快速路径不被 `kode/process::toHttp11` 每请求的 `getBody()` 封死，`getRawBody()` 直接返回原串、无二次物化；`withBody()`/`body()` 仍正确清 `rawBody` 保持单一真相源。详见 `CHANGELOG.md`
 - **v3.4.2** - 健壮性/性能：链路追踪上下文同步守卫。`Request` 新增 `TRACE_HEADERS` 单一真相源常量，`syncTraceContext` 经 `hasTraceHeaders()` 守卫——无任一来源头（X-Request-Id / X-Trace-Id / traceparent / X-Correlation-Id）时直接返回，单次仅 4 次 `hasHeader` 查找、零 `Context` 写入。对任意多次 `setRequest` 调用（App::handle / RouteRunner / Request::json 等）天然幂等，且协程/Fiber 安全；不改 `setRequest` 签名、不动任何调用点、不碰 PSR-7 契约。详见 `CHANGELOG.md`
 - **v3.4.1** - 性能：懒原始体（lazy raw-body）+ Emitter 快速路径。消息构造函数与 `getBody()` 加宽为 `StreamInterface|string|null`，传入 `string` 仅存 `rawBody`、`getBody()` 按需懒物化 `Stream`（保持 PSR-7 契约 BC）；`Response::body()` 只存 `rawBody` 并新增 `hasRawBody()/getRawBody()`；`Emitter::emit()` 对持有 `rawBody` 的响应直接 `echo` 原始字符串、跳过 Stream 往返；全部入口（`ServerRequestFactory`/`App::listen`/`ServerRunner`/`Swoole`/`Workerman`）改为传原始字符串，消除每请求 `string → Stream → string` 无效分配。详见 `CHANGELOG.md`

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Psr7\Factory;
 
+use Kode\Http\Psr7\Message\LazyServerRequest;
 use Kode\Http\Psr7\Message\ServerRequest;
 use Kode\Http\Psr7\UploadedFile;
 use Kode\Http\Psr7\Uri;
@@ -48,13 +49,12 @@ class ServerRequestFactory implements ServerRequestFactoryInterface
         $files ??= $_FILES;
 
         $method = strtoupper((string) ($server['REQUEST_METHOD'] ?? 'GET'));
-        $headers = self::headersFromServer($server);
-        $uri = self::uriFromServer($server, $headers);
+        $uri = self::uriFromServer($server);
 
         $rawBody = file_get_contents('php://input');
         $bodyString = $rawBody === false ? '' : $rawBody;
 
-        $contentType = strtolower($headers['Content-Type'] ?? '');
+        $contentType = strtolower($server['CONTENT_TYPE'] ?? '');
         if ($body === null) {
             $body = $_POST;
             if ($body === [] && str_contains($contentType, 'application/json') && $rawBody !== false && $rawBody !== '') {
@@ -65,7 +65,7 @@ class ServerRequestFactory implements ServerRequestFactoryInterface
 
         $protocol = str_replace('HTTP/', '', (string) ($server['SERVER_PROTOCOL'] ?? 'HTTP/1.1'));
 
-        $request = new ServerRequest($method, $uri, $server, $headers, $bodyString, $protocol);
+        $request = new LazyServerRequest($method, $uri, $server, [], $bodyString, $protocol);
 
         return $request
             ->withQueryParams($query)
@@ -76,56 +76,18 @@ class ServerRequestFactory implements ServerRequestFactoryInterface
     }
 
     /**
-     * 从 $_SERVER 提取请求头
-     *
-     * @param array<string, mixed> $server
-     * @return array<string, string>
-     */
-    private static function headersFromServer(array $server): array
-    {
-        $headers = [];
-
-        foreach ($server as $key => $value) {
-            if (!is_string($key) || !is_scalar($value)) {
-                continue;
-            }
-
-            if (str_starts_with($key, 'HTTP_')) {
-                $name = self::normalizeName(substr($key, 5));
-                $headers[$name] = (string) $value;
-                continue;
-            }
-
-            if ($key === 'CONTENT_TYPE' || $key === 'CONTENT_LENGTH' || $key === 'CONTENT_MD5') {
-                $headers[self::normalizeName($key)] = (string) $value;
-            }
-        }
-
-        return $headers;
-    }
-
-    /**
-     * 将 SERVER 键名转为标准请求头名，如 ACCEPT_LANGUAGE => Accept-Language
-     */
-    private static function normalizeName(string $key): string
-    {
-        return str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', $key))));
-    }
-
-    /**
      * 从 $_SERVER 还原完整 URI
      *
      * @param array<string, mixed> $server
-     * @param array<string, string> $headers
      */
-    private static function uriFromServer(array $server, array $headers): UriInterface
+    private static function uriFromServer(array $server): UriInterface
     {
         $https = (string) ($server['HTTPS'] ?? '');
         $scheme = ($https !== '' && strtolower($https) !== 'off') || (int) ($server['SERVER_PORT'] ?? 80) === 443
             ? 'https'
             : 'http';
 
-        $host = $headers['Host'] ?? (string) ($server['SERVER_NAME'] ?? $server['SERVER_ADDR'] ?? 'localhost');
+        $host = (string) ($server['HTTP_HOST'] ?? $server['SERVER_NAME'] ?? $server['SERVER_ADDR'] ?? 'localhost');
         $port = null;
         if (str_contains($host, ':')) {
             [$host, $portPart] = explode(':', $host, 2);

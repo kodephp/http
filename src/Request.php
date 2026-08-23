@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kode\Http;
 
 use Kode\Context\Context;
+use Kode\Http\Psr7\Message\LazyServerRequest;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\UploadedFileInterface;
 
@@ -49,6 +50,15 @@ class Request
         'X-Trace-Id',
         'traceparent',
         'X-Correlation-Id',
+    ];
+
+    /** 链路追踪来源头在 $_SERVER 中的键（与 TRACE_HEADERS 一一对应）；
+     *  守卫直接扫 server params，避免触发懒加载请求的 header 规范化 */
+    private const array TRACE_HEADERS_SERVER = [
+        'HTTP_X_REQUEST_ID',
+        'HTTP_X_TRACE_ID',
+        'HTTP_TRACEPARENT',
+        'HTTP_X_CORRELATION_ID',
     ];
 
     /** @var ServerRequestInterface|null 无上下文组件时的回退存储 */
@@ -113,7 +123,8 @@ class Request
      * 使下游 KodeException、中间件可复用同一链路，实现分布式追踪对齐。
      *
      * 健壮性：绝大多数请求（压测 / 生产）不带任何链路头，先经 {@see hasTraceHeaders}
-     * 守卫快速返回 —— 单次仅 4 次 hasHeader 查找、无任何 Context 写入；对任意多次
+     * 守卫快速返回 —— 单次仅 4 次 server params 键查找（不调用 hasHeader，故不触发
+     * 懒加载请求的 header 规范化）、无任何 Context 写入；对任意多次
      * setRequest 调用（App::handle / RouteRunner / Request::json 等）天然幂等，
      * 且只读写按协程隔离的 kode/context，无进程级共享状态，协程安全。
      */
@@ -144,10 +155,28 @@ class Request
     }
 
     /**
-     * 请求是否携带任一链路追踪来源头（单一真相源，与取值逻辑共用 TRACE_HEADERS）
+     * 请求是否携带任一链路追踪来源头。
+     *
+     * 直接扫描 server params（$_SERVER 的 HTTP_* 键），**不调用 hasHeader**，
+     * 因此不会触发懒加载请求（LazyServerRequest）的 header 规范化，热路径零 header 成本。
+     * 取值（syncTraceContext 内的 getHeaderLine）仅在确有链路头时发生，属低频路径。
      */
     private static function hasTraceHeaders(ServerRequestInterface $request): bool
     {
+        $server = $request->getServerParams();
+        foreach (self::TRACE_HEADERS_SERVER as $key) {
+            if (isset($server[$key]) && $server[$key] !== '') {
+                return true;
+            }
+        }
+
+        // 兜底：链路头经 withHeader 程序化设置（如测试 / 手动注入）时不在 server params 中。
+        // 对 LazyServerRequest，若尚未解析 header 则直接返回 false，避免强制规范化拖慢热路径；
+        // 已解析（如已调用 withHeader）或非懒加载请求时，退回标准 hasHeader 判定。
+        if ($request instanceof LazyServerRequest && !$request->isHeadersResolved()) {
+            return false;
+        }
+
         foreach (self::TRACE_HEADERS as $header) {
             if ($request->hasHeader($header)) {
                 return true;
