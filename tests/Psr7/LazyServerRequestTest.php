@@ -135,4 +135,41 @@ class LazyServerRequestTest extends TestCase
         self::assertSame('bar', $request->getHeaderLine('X-Foo'));
         self::assertSame('example.com', $request->getHeaderLine('Host'));
     }
+
+    /**
+     * 适配器场景（Swoole / Workerman）：header 已由 server 对象预解析并构造期传入，
+     * 而非来自 $_SERVER 的 HTTP_* 键。必须保留且不回源覆盖，且仍保持懒加载（未读不解析）。
+     */
+    public function testAdapterPassedHeadersPreservedAndLazy(): void
+    {
+        $server = [
+            'request_uri' => '/api/users',
+            'query_string' => 'page=1',
+            'request_method' => 'GET',
+            // 注意：Swoole/Workerman 的 server 参数不含 HTTP_* 键，header 在 $headers 中
+        ];
+        $passedHeaders = [
+            'content-type' => ['application/json'],
+            'x-request-id' => ['req-xyz'],
+        ];
+
+        $request = new LazyServerRequest('GET', new Uri('/api/users'), $server, $passedHeaders, '', '1.1');
+
+        // 构造期已传入 header → headerNames 已填充，resolveHeaders 应直接保留（不回源）
+        self::assertFalse($this->headersResolved($request), '构造期传入 header 时不应急切回源 $_SERVER');
+        self::assertInstanceOf(LazyServerRequest::class, $request);
+
+        // 读取到的是传入的 header，而非被空 server 回源清空
+        self::assertSame('application/json', $request->getHeaderLine('Content-Type'));
+        self::assertSame('req-xyz', $request->getHeaderLine('X-Request-Id'));
+
+        // 首次读取后仍标记为已解析，且结果等价于传入值（getHeaders 键为原始传入的小写名）
+        self::assertTrue($this->headersResolved($request));
+        self::assertArrayHasKey('content-type', $request->getHeaders());
+        self::assertArrayHasKey('x-request-id', $request->getHeaders());
+
+        // 路由所需的 method + path 不受影响
+        self::assertSame('GET', $request->getMethod());
+        self::assertSame('/api/users', $request->getUri()->getPath());
+    }
 }

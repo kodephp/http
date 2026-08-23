@@ -99,6 +99,12 @@ class LazyServerRequest extends ServerRequest
 
     /**
      * 首次访问 header 时，从 server params 提取并规范化一次，之后所有读取走缓存。
+     *
+     * 兼容两种来源：
+     * - 构造期未传入 header（如 FPM 经 ServerRequestFactory::fromGlobals 传空数组）：
+     *   从 $_SERVER 的 HTTP_* / CONTENT_* 键回源提取并规范化。
+     * - 构造期已传入 header（如 Swoole / Workerman 适配器从 server 对象预解析后传入）：
+     *   headerNames 已被 initializeHeaders 填充，直接保留，不再回源——避免回源清空已传入 header。
      */
     private function resolveHeaders(): void
     {
@@ -106,6 +112,10 @@ class LazyServerRequest extends ServerRequest
             return;
         }
         $this->headersResolved = true;
+
+        if ($this->headerNames !== []) {
+            return;
+        }
 
         $server = $this->getServerParams();
         $headers = [];

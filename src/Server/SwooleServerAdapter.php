@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Server;
 
-use Kode\Http\Psr7\Message\ServerRequest;
+use Kode\Http\Psr7\Message\LazyServerRequest;
 use Psr\Http\Message\ServerRequestInterface;
 
 class SwooleServerAdapter
@@ -57,6 +57,6 @@ class SwooleServerAdapter
 
         $serverParams = $swooleRequest->server ?? [];
 
-        return new ServerRequest($method, $uri, $serverParams, $headers, $body);
+        return new LazyServerRequest($method, $uri, $serverParams, $headers, $body);
     }
 }

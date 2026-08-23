@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Server;
 
+use Kode\Http\Psr7\Factory\ServerRequestFactory;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\ResponseInterface;
 
@@ -130,39 +131,14 @@ class ServerRunner
     /**
      * 从全局变量创建 ServerRequest
      *
-     * 从 $_SERVER、php://input 等全局变量构建 PSR-7 ServerRequest 对象。
+     * 委托 {@see ServerRequestFactory::fromGlobals()} 统一构建——复用其
+     * 懒加载请求（热路径零 header 成本）与正确的头名规范化，避免此处重复实现。
      *
      * @return ServerRequestInterface PSR-7 服务端请求对象
      */
     private function createServerRequestFromGlobals(): ServerRequestInterface
     {
-        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-        $uri = new \Kode\Http\Psr7\Uri($_SERVER['REQUEST_URI'] ?? '/');
-
-        $headers = [];
-        foreach ($_SERVER as $key => $value) {
-            if (str_starts_with($key, 'HTTP_')) {
-                $header = str_replace('_', '-', substr($key, 5));
-                $headers[$header] = [$value];
-            }
-        }
-
-        if (isset($_SERVER['CONTENT_TYPE'])) {
-            $headers['Content-Type'] = [$_SERVER['CONTENT_TYPE']];
-        }
-        if (isset($_SERVER['CONTENT_LENGTH'])) {
-            $headers['Content-Length'] = [$_SERVER['CONTENT_LENGTH']];
-        }
-
-        $body = file_get_contents('php://input') ?: '';
-
-        return new \Kode\Http\Psr7\Message\ServerRequest(
-            $method,
-            $uri,
-            $_SERVER,
-            $headers,
-            $body
-        );
+        return ServerRequestFactory::fromGlobals();
     }
 
     /**
