@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kode\Http;
 
 use Kode\Context\Context;
+use Kode\Http\Psr7\Message\LazyHeaderAware;
 use Kode\Http\Psr7\Message\LazyServerRequest;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\UploadedFileInterface;
@@ -157,24 +158,26 @@ class Request
     /**
      * 请求是否携带任一链路追踪来源头。
      *
-     * 直接扫描 server params（$_SERVER 的 HTTP_* 键），**不调用 hasHeader**，
-     * 因此不会触发懒加载请求（LazyServerRequest）的 header 规范化，热路径零 header 成本。
+     * 优先级：先做懒加载早退 —— 对实现 {@see LazyHeaderAware} 且 header 尚未解析的
+     * 请求（链路头只可能来自程序化 withHeader 注入或已解析的 HTTP_* server params，
+     * 两者在未解析前都不存在），直接返回 false，全程不触发任何解析
+     * （header 规范化 / server params 构建），保持懒加载请求热路径零成本承诺。
+     *
+     * 随后直接扫描 server params（$_SERVER 的 HTTP_* 键），**不调用 hasHeader**，
+     * 避免非懒请求也付出 header 规范化成本。
      * 取值（syncTraceContext 内的 getHeaderLine）仅在确有链路头时发生，属低频路径。
      */
     private static function hasTraceHeaders(ServerRequestInterface $request): bool
     {
+        if ($request instanceof LazyHeaderAware && !$request->isHeadersResolved()) {
+            return false;
+        }
+
         $server = $request->getServerParams();
         foreach (self::TRACE_HEADERS_SERVER as $key) {
             if (isset($server[$key]) && $server[$key] !== '') {
                 return true;
             }
-        }
-
-        // 兜底：链路头经 withHeader 程序化设置（如测试 / 手动注入）时不在 server params 中。
-        // 对 LazyServerRequest，若尚未解析 header 则直接返回 false，避免强制规范化拖慢热路径；
-        // 已解析（如已调用 withHeader）或非懒加载请求时，退回标准 hasHeader 判定。
-        if ($request instanceof LazyServerRequest && !$request->isHeadersResolved()) {
-            return false;
         }
 
         foreach (self::TRACE_HEADERS as $header) {

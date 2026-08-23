@@ -15,7 +15,7 @@ namespace Kode\Http\Psr7\Message;
  * query / cookie / uploadedFiles / parsedBody 仍按原逻辑构建（成本可忽略），
  * 因为路由与绝大多数处理器都需要它们，而 header 在纯转发类热路径上往往不被读取。
  */
-class LazyServerRequest extends ServerRequest
+class LazyServerRequest extends ServerRequest implements LazyHeaderAware
 {
     private bool $headersResolved = false;
 
