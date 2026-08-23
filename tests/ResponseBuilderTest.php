@@ -147,4 +147,24 @@ final class ResponseBuilderTest extends TestCase
         $this->assertFalse($resp->hasRawBody(), 'withBody() 应清掉 rawBody');
         $this->assertSame('replaced', (string) $resp->getBody());
     }
+
+    public function testIsJsonContentTypeDefault(): void
+    {
+        $resp = Response::json(['a' => 1])->send();
+        $this->assertTrue($resp->isJsonContentType());
+    }
+
+    public function testIsJsonContentTypeCustomHeader(): void
+    {
+        $resp = (new Response(200, ['Content-Type' => 'text/html; charset=utf-8']))
+            ->withBody(Stream::create('<h1>hi</h1>'));
+        $this->assertFalse($resp->isJsonContentType());
+    }
+
+    public function testIsJsonContentTypeLowercaseHeaderKey(): void
+    {
+        // 构造时传小写头键：headerNames 映射必须兜住，不能漏判
+        $resp = new Response(200, ['content-type' => 'application/json']);
+        $this->assertTrue($resp->isJsonContentType());
+    }
 }

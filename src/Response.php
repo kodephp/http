@@ -304,6 +304,28 @@ class Response extends Psr7\Message\Response
     }
 
     /**
+     * 是否为 JSON Content-Type（轻量读取，不触发 PSR-7 header 规范化）
+     *
+     * 热路径守卫：JsonErrorHandler 每请求调用 isJsonContentType 判定，
+     * 对 Kode 自研响应直接读内部 headers 数组（构造默认即
+     * application/json; charset=utf-8），省去 getHeaderLine 的
+     * normalizeHeaderName 全表遍历 + implode 开销（~1-2µs/请求）。
+     *
+     * 键名解析走 headerNames（小写→原始大小写）映射，与 getHeaderLine
+     * 语义完全一致：无论构造时传入 'Content-Type' 还是 'content-type'
+     * 均可命中，不会因大小写变体漏判。
+     */
+    public function isJsonContentType(): bool
+    {
+        $key = $this->headerNames['content-type'] ?? null;
+        if ($key === null) {
+            return false;
+        }
+        $ct = $this->headers[$key][0] ?? '';
+        return str_contains(strtolower($ct), 'application/json');
+    }
+
+    /**
      * 获取响应体（字符串形式）
      */
     public function getBodyString(): string

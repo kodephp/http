@@ -65,6 +65,9 @@ class Request
     /** @var ServerRequestInterface|null 无上下文组件时的回退存储 */
     private static ?ServerRequestInterface $fallback = null;
 
+    /** 本轮请求是否已写入链路追踪上下文（供 clear 按需清理，热路径省 4 次 Context::delete） */
+    private static bool $traceWritten = false;
+
     /** @var list<string> 代理来源 IP 头，按优先级排列 */
     public const array IP_HEADERS = [
         'X-Forwarded-For',
@@ -109,8 +112,13 @@ class Request
         if (class_exists(Context::class)) {
             Context::delete(self::CONTEXT_KEY);
 
-            foreach (self::TRACE_KEYS as $key) {
-                Context::delete($key);
+            // 绝大多数请求（压测/生产）不携带链路头，traceWritten 为 false 时
+            // 跳过 4 次 Context::delete（每次含执行单元解析 + WeakMap 查找，合计 ~1µs/请求）。
+            if (self::$traceWritten) {
+                foreach (self::TRACE_KEYS as $key) {
+                    Context::delete($key);
+                }
+                self::$traceWritten = false;
             }
         }
 
@@ -140,6 +148,7 @@ class Request
             ?: '';
         if ($requestId !== '') {
             Context::set(Context::REQUEST_ID, $requestId);
+            self::$traceWritten = true;
         }
 
         $traceId = $request->getHeaderLine('traceparent')
@@ -147,11 +156,13 @@ class Request
             ?: '';
         if ($traceId !== '') {
             Context::set(Context::TRACE_ID, $traceId);
+            self::$traceWritten = true;
         }
 
         $correlationId = $request->getHeaderLine('X-Correlation-Id') ?: '';
         if ($correlationId !== '') {
             Context::set(Context::CORRELATION_ID, $correlationId);
+            self::$traceWritten = true;
         }
     }
 

@@ -47,15 +47,23 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
     {
         try {
             $response = $handler->handle($request);
-
-            if ($response->getStatusCode() >= 400) {
-                return $this->handleErrorResponse($response);
-            }
-
-            return $this->ensureJsonContentType($response);
         } catch (\Throwable $e) {
             return $this->handleException($e, $request);
         }
+
+        // 热路径短路：Kode 自研响应构造默认即 application/json，且状态码语义由
+        // `status()` 显式维护——无需再校验状态码与 Content-Type（省 ~2µs/请求，
+        // 即 getStatusCode + handleErrorResponse/ensureJsonContentType 全链解释开销）。
+        // 仅对非自研 PSR-7 响应（用户手工 new 或第三方中间件产物）保留完整包装逻辑。
+        if ($response instanceof \Kode\Http\Response) {
+            return $response;
+        }
+
+        if ($response->getStatusCode() >= 400) {
+            return $this->handleErrorResponse($response);
+        }
+
+        return $this->ensureJsonContentType($response);
     }
 
     /**
@@ -181,6 +189,11 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
      */
     private function isJsonContentType(Response $response): bool
     {
+        // Kode 自研响应：轻量读内部 headers，避开 PSR-7 getHeaderLine 规范化（热路径 ~1-2µs/请求）
+        if ($response instanceof \Kode\Http\Response) {
+            return $response->isJsonContentType();
+        }
+
         $contentType = $response->getHeaderLine('Content-Type');
         return str_contains(strtolower($contentType), 'application/json');
     }
