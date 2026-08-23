@@ -93,6 +93,11 @@ class Stream implements StreamInterface
      */
     public static function create(string $content = '', string $mode = 'r+'): StreamInterface
     {
+        // 小体（≤1MB，含空串）返回纯内存 StringStream，跳过 fopen('php://temp') + 两次整段拷贝
+        if ($content === '' || strlen($content) <= 1_048_576) {
+            return new StringStream($content);
+        }
+
         $resource = fopen('php://temp', $mode);
         if ($resource === false) {
             throw new RuntimeException('无法创建临时流');

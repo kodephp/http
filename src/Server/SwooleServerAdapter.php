@@ -34,7 +34,11 @@ class SwooleServerAdapter
                 }
             }
 
-            $swooleResponse->end($response->getBody()->getContents());
+            // kode 自研响应直接取内部字符串体，避开 PSR-7 getBody()->getContents() 接口分发
+            $body = $response instanceof \Kode\Http\Response
+                ? $response->getBodyString()
+                : $response->getBody()->getContents();
+            $swooleResponse->end($body);
         });
 
         $this->server->start();

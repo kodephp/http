@@ -15,6 +15,7 @@ use Kode\Http\Psr7\Stream;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
@@ -34,7 +35,7 @@ final class HttpMiddlewareTest extends TestCase
         };
     }
 
-    private function request(string $method, array $headers = [], ?Stream $body = null): ServerRequestInterface
+    private function request(string $method, array $headers = [], ?StreamInterface $body = null): ServerRequestInterface
     {
         return new ServerRequest($method, 'http://x.com/', [], $headers, $body);
     }

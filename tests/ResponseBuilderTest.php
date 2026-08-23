@@ -124,7 +124,7 @@ final class ResponseBuilderTest extends TestCase
 
         // 消费者（如 toHttp11）读取一次 getBody()
         $stream = $resp->getBody();
-        $this->assertInstanceOf(Stream::class, $stream);
+        $this->assertInstanceOf(\Psr\Http\Message\StreamInterface::class, $stream);
         $this->assertSame('{"a":1}', (string) $stream);
 
         // 关键不变量：rawBody 未被销毁，快速路径与 getRawBody() 仍可用

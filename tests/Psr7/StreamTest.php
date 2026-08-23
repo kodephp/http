@@ -9,6 +9,20 @@ use PHPUnit\Framework\TestCase;
 
 class StreamTest extends TestCase
 {
+    /**
+     * 通过 fopen + 构造函数直接创建 Stream（不走 create() 快路径），
+     * 用于测试 Stream 特有的可写/可定位行为。
+     */
+    private function createFileStream(string $content = ''): Stream
+    {
+        $resource = fopen('php://temp', 'r+');
+        if ($content !== '') {
+            fwrite($resource, $content);
+            fseek($resource, 0);
+        }
+        return new Stream($resource, 'r+');
+    }
+
     public function testCreateFromString(): void
     {
         $stream = Stream::create('Hello World');
@@ -29,32 +43,32 @@ class StreamTest extends TestCase
 
     public function testIsWritable(): void
     {
-        $stream = Stream::create('content');
+        $stream = $this->createFileStream('content');
         $this->assertTrue($stream->isWritable());
     }
 
     public function testIsSeekable(): void
     {
-        $stream = Stream::create('content');
+        $stream = $this->createFileStream('content');
         $this->assertTrue($stream->isSeekable());
     }
 
     public function testRead(): void
     {
-        $stream = Stream::create('Hello World');
+        $stream = $this->createFileStream('Hello World');
         $this->assertEquals('Hello', $stream->read(5));
     }
 
     public function testReadAfterSeek(): void
     {
-        $stream = Stream::create('Hello World');
+        $stream = $this->createFileStream('Hello World');
         $stream->seek(6);
         $this->assertEquals('World', $stream->read(5));
     }
 
     public function testWrite(): void
     {
-        $stream = Stream::create();
+        $stream = $this->createFileStream();
         $bytes = $stream->write('Hello');
         $this->assertEquals(5, $bytes);
         $this->assertEquals('Hello', (string) $stream);
@@ -62,21 +76,21 @@ class StreamTest extends TestCase
 
     public function testGetContents(): void
     {
-        $stream = Stream::create('Hello World');
+        $stream = $this->createFileStream('Hello World');
         $stream->rewind();
         $this->assertEquals('Hello World', $stream->getContents());
     }
 
     public function testTell(): void
     {
-        $stream = Stream::create('Hello World');
+        $stream = $this->createFileStream('Hello World');
         $stream->seek(6);
         $this->assertEquals(6, $stream->tell());
     }
 
     public function testEof(): void
     {
-        $stream = Stream::create('Hi');
+        $stream = $this->createFileStream('Hi');
         $this->assertFalse($stream->eof());
         $stream->getContents();
         $this->assertTrue($stream->eof());
@@ -84,7 +98,7 @@ class StreamTest extends TestCase
 
     public function testRewind(): void
     {
-        $stream = Stream::create('Hello');
+        $stream = $this->createFileStream('Hello');
         $stream->seek(3);
         $stream->rewind();
         $this->assertEquals(0, $stream->tell());
@@ -99,7 +113,7 @@ class StreamTest extends TestCase
 
     public function testClose(): void
     {
-        $stream = Stream::create('Hello');
+        $stream = $this->createFileStream('Hello');
         $stream->close();
         $this->expectException(\RuntimeException::class);
         $stream->read(1);
@@ -107,7 +121,7 @@ class StreamTest extends TestCase
 
     public function testDetach(): void
     {
-        $stream = Stream::create('Hello');
+        $stream = $this->createFileStream('Hello');
         $resource = $stream->detach();
         $this->assertNotNull($resource);
         $this->assertNull($stream->getSize());
@@ -115,21 +129,21 @@ class StreamTest extends TestCase
 
     public function testGetMetadata(): void
     {
-        $stream = Stream::create('Hello');
+        $stream = $this->createFileStream('Hello');
         $metadata = $stream->getMetadata();
         $this->assertIsArray($metadata);
     }
 
     public function testGetMetadataWithKey(): void
     {
-        $stream = Stream::create('Hello');
+        $stream = $this->createFileStream('Hello');
         $uri = $stream->getMetadata('uri');
         $this->assertNotNull($uri);
     }
 
     public function testDetachedStreamOperations(): void
     {
-        $stream = Stream::create('Hello');
+        $stream = $this->createFileStream('Hello');
         $stream->detach();
 
         $this->assertTrue($stream->eof());
@@ -156,5 +170,14 @@ class StreamTest extends TestCase
 
         $stream = Stream::createFromResource($resource);
         $this->assertEquals('Resource Content', $stream->getContents());
+    }
+
+    public function testCreateLargeContentReturnsStream(): void
+    {
+        // 超过 1MB 仍返回 Stream（php://temp 落盘路径）
+        $large = str_repeat('x', 1_048_577);
+        $stream = Stream::create($large);
+        $this->assertInstanceOf(Stream::class, $stream);
+        $this->assertEquals(1_048_577, $stream->getSize());
     }
 }

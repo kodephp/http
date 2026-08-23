@@ -215,7 +215,8 @@ $app->serve(8080);
 | `Request` | HTTP 请求消息，包含方法、URI、头部、协议版本 |
 | `Response` | HTTP 响应消息，包含状态码、原因短语、头部、正文 |
 | `ServerRequest` | 服务端请求，继承 Request 并添加服务端特性 |
-| `Stream` | 流式正文，支持读取、写入、定位等操作（自研实现） |
+| `Stream` | 流式正文，支持读取、写入、定位等操作（自研实现）；`create()` 对 ≤1MB 返回纯内存 `StringStream` |
+| `StringStream` | 纯内存流（v3.4.7），持有字符串直接返回、无 `fopen`/拷贝开销，`isWritable()`/`isSeekable()` 返回 false |
 | `Uri` | URI 实现，支持解析和构建 URI 各部分 |
 
 > **v3.4 起消息语义变更（契约级）**：`Request` / `Response` / `ServerRequest` 的 `with*` 方法
@@ -381,7 +382,8 @@ src/
 │   ├── Message/                   # 消息类（Request/Response/ServerRequest）
 │   ├── Factory/                   # PSR-17 工厂（含 Psr17Factory 聚合工厂）
 │   ├── Trait/                     # 可复用 Trait（RequestTrait/ResponseTrait）
-│   ├── Stream.php                 # 自研流实现
+│   ├── Stream.php                 # 自研流实现（create() 对小体返回 StringStream）
+│   ├── StringStream.php            # 纯内存流（v3.4.7，无 fopen/拷贝开销）
 │   ├── Uri.php                    # URI 实现
 │   └── UploadedFile.php           # PSR-7 上传文件
 ├── Routing/                       # 路由子系统
@@ -457,6 +459,7 @@ kode/http
 
 ## 版本历史
 
+- **v3.4.7** - 性能：Swoole emit 直取字符串体 + 小体响应纯内存 Stream。§7.1 `SwooleServerAdapter::emit` 对 `Kode\Http\Response` 实例直接调用 `getBodyString()` 取内部字符串体，跳过 PSR-7 `getBody()->getContents()` 的 Stream 分发（非 kode 响应 fallback 原路径）；§7.2 新增 `Psr7\StringStream`（纯内存 `StreamInterface` 实现，`getContents()`/`__toString()` 直接返回持有的字符串，`isWritable()`/`isSeekable()` 返回 false），`Stream::create()` 对 ≤1MB（含空串）返回 `StringStream`，超限回落 `php://temp` 保留大文件落盘能力。消除 ~1KB 响应体每请求 `fopen('php://temp')` + 两次整段拷贝（fwrite / stream_get_contents）的开销。详见 `CHANGELOG.md`
 - **v3.4.6** - 性能：Swoole / Workerman 适配器 Uri 懒构造。新增 `Psr7\LazyUri`（实现 `UriInterface`，`with*` 不可变语义 / `__toString` RFC 3986 拼装；**不调用 parse_url、构造期不做 clone**），适配器 `convertToServerRequest` 由 `new Uri($path)->withQuery($query)` 改为一次 `new LazyUri($path, $query)`，直接持有已分解的 path + query 两件原始分量。微基准（N=200k）：适配器 Uri 构造成本 0.268 µs → 0.128 µs/op（约 2.1×）；配合 v3.4.5 的 `LazyServerRequest`，服务端入口请求构建彻底无 parse_url / clone / 急切 header 规范化。契约不变：`LazyUri` 仅在适配器 path+query 热路径承接 `Uri`，FPM 生产路径仍用 `Uri`；PSR-7 / ServerRequest / Router / Emitter / 中间件管道全部未动。详见 `CHANGELOG.md`
 - **v3.4.5** - 统一/性能：三个服务端入口全部走 `LazyServerRequest`。`ServerRunner::createServerRequestFromGlobals()` 改为委托 `ServerRequestFactory::fromGlobals()`（删除重复的、规范化有误的 header 提取逻辑，让 FPM 生产路径也吃热路径零 header 成本）；`SwooleServerAdapter` / `WorkermanServerAdapter` 的 `convertToServerRequest` 由 `new ServerRequest` 改为 `new LazyServerRequest`；`LazyServerRequest::resolveHeaders` 加固——构造期已传入 header（适配器来源）时不再回源 `$_SERVER` 覆盖，避免丢失预解析 header。详见 `CHANGELOG.md`
 - **v3.4.4** - 性能：热路径零 header 成本。新增 `Psr7\Message\LazyServerRequest`（继承 `ServerRequest`，可变语义 / PSR-7 契约不变），`ServerRequestFactory::fromGlobals()` 改为构建它并将 **header 规范化延迟到首次 `getHeader*` 访问**；路由（method + path）完全不触发 header 提取。`hasHeader` 在未解析时走原始源判定、不强制规范化；`Request::hasTraceHeaders` 改为扫 `server params` 的 `HTTP_*` 键（热路径零 header 成本）。微基准：`fromGlobals` 在不读 header 时由 8.68 µs → 1.41 µs/req（约 6.2×）。详见 `CHANGELOG.md`
