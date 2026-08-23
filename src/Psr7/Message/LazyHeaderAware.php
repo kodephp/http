@@ -22,4 +22,13 @@ interface LazyHeaderAware
      * 未解析时调用方应假设不存在程序化注入的 header，可跳过 header 扫描。
      */
     public function isHeadersResolved(): bool;
+
+    /**
+     * 定向读取单个 header 的值：必须在不触发全量 header 解析 / server params
+     * 引导构建的前提下完成（未命中返回 null）。用于链路追踪嗅探等热路径守卫，
+     * 使懒加载请求维持「热路径零解析成本」的承诺，同时不错判真实报文中的链路头。
+     * 内部实现可走原始报文定向扫描 / server params 键查 / 显式注入缓存等廉价来源；
+     * 若 header 已解析，允许退化为普通 getHeaderLine。
+     */
+    public function peekHeader(string $name): ?string;
 }

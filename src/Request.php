@@ -158,19 +158,27 @@ class Request
     /**
      * 请求是否携带任一链路追踪来源头。
      *
-     * 优先级：先做懒加载早退 —— 对实现 {@see LazyHeaderAware} 且 header 尚未解析的
-     * 请求（链路头只可能来自程序化 withHeader 注入或已解析的 HTTP_* server params，
-     * 两者在未解析前都不存在），直接返回 false，全程不触发任何解析
-     * （header 规范化 / server params 构建），保持懒加载请求热路径零成本承诺。
-     *
-     * 随后直接扫描 server params（$_SERVER 的 HTTP_* 键），**不调用 hasHeader**，
-     * 避免非懒请求也付出 header 规范化成本。
+     * 优先级：懒加载早退 —— 对实现 {@see LazyHeaderAware} 且 header 尚未解析的请求，
+     * 通过 {@see LazyHeaderAware::peekHeader()} 定向读取 4 个链路头，全程不触发任何
+     * 全量解析（header 规范化 / server params 引导构建），既维持懒加载请求热路径
+     * 零成本承诺，又不错判真实报文（原始请求头 / $_SERVER 的 HTTP_* / withHeader 注入）。
+     * 已解析的懒请求与非懒请求退化为通用路径：先扫 server params（$_SERVER 的
+     * HTTP_* 键，**不调用 hasHeader**），再走 hasHeader 兜底。
      * 取值（syncTraceContext 内的 getHeaderLine）仅在确有链路头时发生，属低频路径。
      */
     private static function hasTraceHeaders(ServerRequestInterface $request): bool
     {
-        if ($request instanceof LazyHeaderAware && !$request->isHeadersResolved()) {
-            return false;
+        if ($request instanceof LazyHeaderAware) {
+            if (!$request->isHeadersResolved()) {
+                foreach (self::TRACE_HEADERS as $header) {
+                    if ($request->peekHeader($header) !== null) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            // 已解析：退化通用路径（serverParams 可能含 HTTP_*，或 header 已注入）
         }
 
         $server = $request->getServerParams();

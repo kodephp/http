@@ -27,6 +27,45 @@ class LazyServerRequest extends ServerRequest implements LazyHeaderAware
         return $this->headersResolved;
     }
 
+    /**
+     * 定向读取单个 header 值，不触发任何全量解析。
+     *
+     * - 未解析：依次查「显式注入（withHeader 程序化设置）」→「server params 的
+     *   HTTP_* / CONTENT_* 键」，与 hasHeader 未解析分支同构，但返回具体值；
+     * - 已解析：退化为普通 getHeaderLine。
+     *
+     * 供同步追踪嗅探（hasTraceHeaders）在热路径上做零解析守卫。
+     */
+    public function peekHeader(string $name): ?string
+    {
+        if (!$this->headersResolved) {
+            $normalized = $this->normalizeHeaderName($name);
+            if (isset($this->headerNames[$normalized])) {
+                $value = $this->headers[$this->headerNames[$normalized]] ?? null;
+                $value = is_array($value) ? reset($value) : $value;
+                return ($value !== null && $value !== '') ? (string) $value : null;
+            }
+
+            $server = $this->getServerParams();
+            $httpKey = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+            if (isset($server[$httpKey]) && $server[$httpKey] !== '') {
+                return (string) $server[$httpKey];
+            }
+
+            $upper = strtoupper($name);
+            if (($upper === 'CONTENT-TYPE' || $upper === 'CONTENT-LENGTH' || $upper === 'CONTENT-MD5')
+                && isset($server[$upper]) && $server[$upper] !== '') {
+                return (string) $server[$upper];
+            }
+
+            return null;
+        }
+
+        $line = parent::getHeaderLine($name);
+
+        return $line !== '' ? $line : null;
+    }
+
     public function getHeaders(): array
     {
         $this->resolveHeaders();
