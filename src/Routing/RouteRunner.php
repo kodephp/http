@@ -69,22 +69,32 @@ final class RouteRunner implements RequestHandlerInterface
         $result = $this->router->match($request->getMethod(), $request->getUri()->getPath());
 
         if ($result->status === RouteResult::NOT_FOUND) {
+            // 保持 facade 语义：App 层在「无用户中间件」时不再预置请求，
+            // 404/405 分支在此统一写入，行为与旧版（App 层预置）完全等价。
+            Request::setRequest($request);
+
             return $this->handleNotFound($request);
         }
 
         if ($result->status === RouteResult::METHOD_NOT_ALLOWED) {
+            Request::setRequest($request);
+
             return $this->handleMethodNotAllowed($request, $result->allowedMethods);
         }
 
         /** @var Route $route */
         $route = $result->route;
 
-        foreach ($result->params as $name => $value) {
-            $request = $request->withAttribute($name, $value);
+        // 无参路由热路径：跳过 attribute 克隆（_route 在包内无消费方；
+        // _route_params 对空参数恒等于默认值 []，语义完全一致）。
+        if ($result->params !== []) {
+            foreach ($result->params as $name => $value) {
+                $request = $request->withAttribute($name, $value);
+            }
+            $request = $request
+                ->withAttribute('_route', $route)
+                ->withAttribute('_route_params', $result->params);
         }
-        $request = $request
-            ->withAttribute('_route', $route)
-            ->withAttribute('_route_params', $result->params);
 
         Request::setRequest($request);
 

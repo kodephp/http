@@ -50,4 +50,12 @@ class MiddlewareDispatcher extends MiddlewarePipeline
     {
         return count($this->middlewares);
     }
+
+    /**
+     * 是否为「仅默认异常中间件」的最小栈（无用户注册的全局中间件）。
+     */
+    public function isBare(): bool
+    {
+        return count($this->middlewares) <= 1;
+    }
 }

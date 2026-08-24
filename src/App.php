@@ -252,13 +252,17 @@ class App implements RequestHandlerInterface
      */
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        Request::setRequest($request);
+        // 热路径优化：栈中仅默认异常中间件时跳过请求 facade 预置，
+        // 请求对象由 RouteRunner 在派发时写入（含 404/405 分支），行为完全等价。
+        if (!$this->dispatcher->isBare()) {
+            Request::setRequest($request);
+        }
 
         try {
             $response = $this->dispatcher->handle($request);
 
-            // HEAD 请求不返回响应体
-            if (strtoupper($request->getMethod()) === 'HEAD') {
+            // HEAD 请求不返回响应体（strcasecmp 无分配，免 strtoupper 字符串拷贝）
+            if (strcasecmp($request->getMethod(), 'HEAD') === 0) {
                 $response = $response->withBody(Psr7\Stream::create(''));
             }
 
