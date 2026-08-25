@@ -103,6 +103,10 @@ class MiddlewarePipeline implements RequestHandlerInterface
      * 数组还是字符串，出管道时都会被 {@see Response::resolve()} 归一化为
      * 真实的 PSR-7 响应。因此中间件里 `return Response::json(...)` 即可，
      * 无需再调用 `->send()`（保留亦可，向后兼容）。
+     *
+     * 热路径优化：管道出口对已为 {@see ResponseInterface} 的结果跳过
+     * `Response::resolve()` 的 `match(true)` 分发，直接透传——绝大多数请求
+     * （CallableHandler 返回 Response / JsonErrorHandler 短路）命中此快路径。
      */
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
@@ -110,7 +114,11 @@ class MiddlewarePipeline implements RequestHandlerInterface
             $this->compile();
         }
 
-        return Response::resolve($this->compiled->handle($request));
+        $response = $this->compiled->handle($request);
+
+        return $response instanceof ResponseInterface
+            ? $response
+            : Response::resolve($response);
     }
 
     /**

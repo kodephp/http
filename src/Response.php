@@ -39,6 +39,28 @@ class Response extends Psr7\Message\Response
     public const int JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
     /**
+     * 预构建模板：默认 200 + Content-Type: application/json; charset=utf-8。
+     *
+     * 构造一次、永久复用——`json()` / `make()` 快路径 `clone` 模板后直接写 `rawBody`，
+     * 跳过每请求 `new self()` → 构造函数 → `initializeHeaders()`（含 `strtolower` 规范化循环）
+     * 的对象分配 + header 规范化开销。
+     *
+     * 线程安全：模板在首次访问时惰性构建，此后只读不改；`clone` 产生独立副本
+     * （PHP 数组 COW），对模板的 `headers` / `headerNames` 无写回风险。
+     *
+     * @var self|null
+     */
+    private static ?Response $template = null;
+
+    /**
+     * 构建默认模板（200 + application/json）。
+     */
+    private static function buildTemplate(): self
+    {
+        return new self();
+    }
+
+    /**
      * 构造函数：默认 Content-Type 为 application/json
      *
      * 兼容 PSR-7 基类签名，仅在未显式指定 Content-Type 时填充 JSON 默认值，
@@ -58,9 +80,19 @@ class Response extends Psr7\Message\Response
 
     /**
      * 创建空白响应
+     *
+     * 热路径优化：默认参数（200 + 无额外 headers）走 `clone` 模板快路径，
+     * 跳过构造函数 + `initializeHeaders()` + `status()` + `body()` 方法调用链；
+     * 非默认参数回落到完整构造路径。
      */
     public static function make(string $body = '', int $status = 200, array $headers = []): self
     {
+        if ($status === 200 && $headers === []) {
+            $response = clone (self::$template ??= self::buildTemplate());
+            $response->rawBody = $body;
+            return $response;
+        }
+
         $response = (new self())->status($status)->body($body);
         foreach ($headers as $name => $value) {
             $response = $response->header($name, (string) $value);
@@ -71,6 +103,9 @@ class Response extends Psr7\Message\Response
     /**
      * 创建 JSON 响应
      *
+     * 热路径优化：`clone` 预构建模板后直接写 `rawBody`，跳过每请求
+     * `new self()` → `initializeHeaders()`（`strtolower` 规范化循环）开销。
+     *
      * @param mixed $data 任意可 JSON 序列化的数据
      * @param int $code 业务错误码，大于 0 时包裹为 {code, data}
      * @throws \JsonException 数据无法编码时抛出
@@ -79,7 +114,9 @@ class Response extends Psr7\Message\Response
     {
         $payload = $code > 0 ? ['code' => $code, 'data' => $data] : $data;
 
-        return (new self())->body(self::encode($payload));
+        $response = clone (self::$template ??= self::buildTemplate());
+        $response->rawBody = self::encode($payload);
+        return $response;
     }
 
     /**

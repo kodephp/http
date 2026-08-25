@@ -120,6 +120,12 @@ final class RouteRunner implements RequestHandlerInterface
      * 目标闭包从请求属性 `_route_params` 读取参数，使管道可跨请求复用。
      * 解析结果按路由对象缓存，避免每请求重复反射 / 实例化控制器。
      *
+     * 热路径优化：
+     * - 静态路由（无参数）编译为不含 `getAttribute` 的闭包，直接传 `[]`，
+     *   跳过每请求一次哈希查找 + 默认值回填。
+     * - 闭包内联 `instanceof ResponseInterface` 检查，对已为 PSR-7 响应的
+     *   返回值跳过 `Response::resolve()` 的 `match` 分发。
+     *
      * 注意：缓存的 handler 可跨请求复用（含控制器实例），因此路由处理器
      * 须保持无状态——这与 webman / hyperf 的单例控制器模型一致。
      *
@@ -129,10 +135,26 @@ final class RouteRunner implements RequestHandlerInterface
     {
         $callable = self::toCallable($route->getHandler());
 
-        $target = new CallableHandler(
-            static fn(ServerRequestInterface $req): ResponseInterface =>
-                Response::resolve($callable($req, $req->getAttribute('_route_params', [])))
-        );
+        if ($route->isStatic()) {
+            // 静态路由：跳过 getAttribute 查找
+            $target = new CallableHandler(
+                static function (ServerRequestInterface $req) use ($callable): ResponseInterface {
+                    $result = $callable($req, []);
+                    return $result instanceof ResponseInterface
+                        ? $result
+                        : Response::resolve($result);
+                }
+            );
+        } else {
+            $target = new CallableHandler(
+                static function (ServerRequestInterface $req) use ($callable): ResponseInterface {
+                    $result = $callable($req, $req->getAttribute('_route_params', []));
+                    return $result instanceof ResponseInterface
+                        ? $result
+                        : Response::resolve($result);
+                }
+            );
+        }
 
         $middlewares = $route->getMiddlewares();
         if ($middlewares === []) {

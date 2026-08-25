@@ -167,4 +167,97 @@ final class ResponseBuilderTest extends TestCase
         $resp = new Response(200, ['content-type' => 'application/json']);
         $this->assertTrue($resp->isJsonContentType());
     }
+
+    // ---- 模板 clone 路径正确性 ----
+
+    /**
+     * 连续 json() 调用互不干扰：模板 clone 必须产生独立副本，
+     * 对返回值的 header 写入不影响后续调用。
+     */
+    public function testJsonTemplateCloneIsolation(): void
+    {
+        $r1 = Response::json(['a' => 1]);
+        $r1->header('X-Custom', 'first');
+
+        $r2 = Response::json(['b' => 2]);
+
+        // r2 不应继承 r1 的自定义头
+        $this->assertFalse($r2->hasHeader('X-Custom'));
+        $this->assertSame('{"b":2}', $r2->getRawBody());
+        $this->assertSame(200, $r2->getStatusCode());
+    }
+
+    /**
+     * 连续 make() 调用互不干扰。
+     */
+    public function testMakeTemplateCloneIsolation(): void
+    {
+        $r1 = Response::make('body1');
+        $r1->header('X-Custom', 'val1');
+
+        $r2 = Response::make('body2');
+
+        $this->assertFalse($r2->hasHeader('X-Custom'));
+        $this->assertSame('body2', $r2->getRawBody());
+        $this->assertSame(200, $r2->getStatusCode());
+    }
+
+    /**
+     * 模板 clone 后的 headers / headerNames 映射完整，
+     * hasHeader / getHeader / getHeaderLine 行为与构造路径一致。
+     */
+    public function testJsonTemplateCloneHeadersCorrect(): void
+    {
+        $resp = Response::json(['x' => 1]);
+
+        $this->assertTrue($resp->hasHeader('Content-Type'));
+        $this->assertSame('application/json; charset=utf-8', $resp->getHeaderLine('Content-Type'));
+        $this->assertSame(['application/json; charset=utf-8'], $resp->getHeader('Content-Type'));
+
+        // 小写键也能命中（headerNames 映射）
+        $this->assertTrue($resp->hasHeader('content-type'));
+        $this->assertSame('application/json; charset=utf-8', $resp->getHeaderLine('content-type'));
+    }
+
+    /**
+     * make() 非默认参数仍走完整构造路径。
+     */
+    public function testMakeNonDefaultStatusFallsBackToConstructor(): void
+    {
+        $resp = Response::make('created', 201);
+
+        $this->assertSame(201, $resp->getStatusCode());
+        $this->assertSame('Created', $resp->getReasonPhrase());
+        $this->assertSame('created', $resp->getRawBody());
+        $this->assertStringContainsString('application/json', $resp->getHeaderLine('Content-Type'));
+    }
+
+    /**
+     * make() 带自定义 headers 仍走完整构造路径。
+     */
+    public function testMakeWithCustomHeadersFallsBack(): void
+    {
+        $resp = Response::make('ok', 200, ['X-Trace' => 'abc']);
+
+        $this->assertSame('ok', $resp->getRawBody());
+        $this->assertSame('abc', $resp->getHeaderLine('X-Trace'));
+        $this->assertStringContainsString('application/json', $resp->getHeaderLine('Content-Type'));
+    }
+
+    /**
+     * 模板 clone 的 rawBody 在 getBody() 物化后保持非破坏性。
+     */
+    public function testJsonTemplateCloneGetBodyNonDestructive(): void
+    {
+        $resp = Response::json(['a' => 1]);
+
+        $this->assertTrue($resp->hasRawBody());
+        $this->assertSame('{"a":1}', $resp->getRawBody());
+
+        $stream = $resp->getBody();
+        $this->assertSame('{"a":1}', (string) $stream);
+
+        $this->assertTrue($resp->hasRawBody(), '模板 clone 后 getBody() 仍不应销毁 rawBody');
+        $this->assertSame('{"a":1}', $resp->getRawBody());
+    }
 }
