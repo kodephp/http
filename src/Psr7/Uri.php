@@ -72,12 +72,48 @@ class Uri implements UriInterface
     /**
      * 解析 URI 字符串
      *
-     * 使用 PHP 内置的 parse_url 函数解析 URI。
+     * 热路径优化：对服务端最常见的 path-only URI（以 `/` 开头，无 scheme、
+     * host、query、fragment）跳过 `parse_url()` 调用，直接设 path 字段。
+     * 该路径覆盖压测/生产绝大多数请求（`/bench/json`、`/api/users/42` 等），
+     * 消除每请求一次 `parse_url()` + 7 次数组访问 + filterScheme 开销。
+     *
+     * 带 query 的 path（如 `/search?q=foo`）也走快路径：拆分 `?` 后分别
+     * 设 path 和 query，仍避免 `parse_url()`。仅当 URI 含 scheme（`://`）
+     * 或 protocol-relative（`//host`）时才回落到 `parse_url()` 完整解析。
      *
      * @param string $uri 要解析的 URI 字符串
      */
     private function parse(string $uri): void
     {
+        // Fast path: path-only or path+query (no scheme/host)
+        // 以 / 开头且第二个字符不是 /（排除 protocol-relative `//host/path`）
+        if ($uri[0] === '/' && ($uri[1] ?? '') !== '/') {
+            $qPos = strpos($uri, '?');
+            if ($qPos !== false) {
+                $this->path = substr($uri, 0, $qPos);
+                $fragPos = strpos($uri, '#', $qPos);
+                if ($fragPos !== false) {
+                    $this->query = substr($uri, $qPos + 1, $fragPos - $qPos - 1);
+                    $this->fragment = substr($uri, $fragPos + 1);
+                } else {
+                    $this->query = substr($uri, $qPos + 1);
+                }
+                return;
+            }
+
+            $fragPos = strpos($uri, '#');
+            if ($fragPos !== false) {
+                $this->path = substr($uri, 0, $fragPos);
+                $this->fragment = substr($uri, $fragPos + 1);
+                return;
+            }
+
+            // Pure path-only: /bench/json
+            $this->path = $uri;
+            return;
+        }
+
+        // Full parse for URIs with scheme/host/etc.
         $parts = parse_url($uri);
 
         if ($parts === false) {

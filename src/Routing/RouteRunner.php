@@ -42,6 +42,21 @@ final class RouteRunner implements RequestHandlerInterface
      */
     private array $compiled = [];
 
+    /**
+     * 已解析的控制器实例缓存（按类名索引，worker 级复用）。
+     *
+     * 无状态控制器在 worker 生命周期内只需实例化一次；后续请求（无论经
+     * {@see compileRoute()} 还是 {@see invoke()}）直接复用缓存实例，
+     * 跳过每请求 `Kode::service()` 查找 + `new $class()` 分配。
+     *
+     * 线程安全：缓存的实例须保持无状态（不持有请求级可变状态）——这与
+     * webman / hyperf 的单例控制器模型一致。如需按请求隔离状态，
+     * 应通过 {@see Request} facade 或 {@see Context} 获取。
+     *
+     * @var array<string, object>
+     */
+    private static array $instanceCache = [];
+
     public function __construct(private readonly Router $router)
     {
     }
@@ -212,9 +227,21 @@ final class RouteRunner implements RequestHandlerInterface
     }
 
     /**
-     * 解析控制器实例：优先取容器中已注册的服务
+     * 解析控制器实例：优先取容器中已注册的服务，其次取 worker 级缓存。
+     *
+     * 首次解析时调用 `Kode::service()` 查容器，未命中则 `new $class()`，
+     * 结果写入 {@see $instanceCache} 供后续请求复用——无状态控制器在
+     * worker 生命周期内只实例化一次，消除每请求 DI 解析开销。
      */
     private static function resolveClass(string $class): object
+    {
+        return self::$instanceCache[$class] ??= self::doResolveClass($class);
+    }
+
+    /**
+     * 实际解析逻辑（仅在缓存未命中时执行）。
+     */
+    private static function doResolveClass(string $class): object
     {
         $service = Kode::service($class);
         if ($service !== null) {

@@ -183,4 +183,90 @@ class UriTest extends TestCase
         $this->assertEquals('name=value', $uri->getQuery());
         $this->assertEquals('section', $uri->getFragment());
     }
+
+    // ---- Fast path: path-only / path+query ----
+
+    public function testPathOnlyFastPath(): void
+    {
+        $uri = new Uri('/bench/json');
+
+        $this->assertSame('/bench/json', $uri->getPath());
+        $this->assertSame('', $uri->getScheme());
+        $this->assertSame('', $uri->getHost());
+        $this->assertNull($uri->getPort());
+        $this->assertSame('', $uri->getQuery());
+        $this->assertSame('', $uri->getFragment());
+        $this->assertSame('', $uri->getUserInfo());
+    }
+
+    public function testPathWithQueryFastPath(): void
+    {
+        $uri = new Uri('/search?q=hello+world&page=2');
+
+        $this->assertSame('/search', $uri->getPath());
+        $this->assertSame('q=hello+world&page=2', $uri->getQuery());
+        $this->assertSame('', $uri->getHost());
+        $this->assertSame('', $uri->getFragment());
+    }
+
+    public function testPathWithFragmentFastPath(): void
+    {
+        $uri = new Uri('/docs/api#section-3');
+
+        $this->assertSame('/docs/api', $uri->getPath());
+        $this->assertSame('section-3', $uri->getFragment());
+        $this->assertSame('', $uri->getQuery());
+    }
+
+    public function testPathWithQueryAndFragmentFastPath(): void
+    {
+        $uri = new Uri('/search?q=test#results');
+
+        $this->assertSame('/search', $uri->getPath());
+        $this->assertSame('q=test', $uri->getQuery());
+        $this->assertSame('results', $uri->getFragment());
+    }
+
+    public function testRootPathFastPath(): void
+    {
+        $uri = new Uri('/');
+
+        $this->assertSame('/', $uri->getPath());
+        $this->assertSame('', $uri->getQuery());
+    }
+
+    public function testFullPathOnlyNoQuery(): void
+    {
+        $uri = new Uri('/api/v1/users/42/profile');
+
+        $this->assertSame('/api/v1/users/42/profile', $uri->getPath());
+        $this->assertSame('', $uri->getQuery());
+        $this->assertSame('', $uri->getFragment());
+    }
+
+    /**
+     * Protocol-relative URI must NOT hit the fast path
+     * (`//host/path` starts with `/` but second char is `/`).
+     */
+    public function testProtocolRelativeUriFallsBackToParseUrl(): void
+    {
+        $uri = new Uri('//example.com/path');
+
+        $this->assertSame('example.com', $uri->getHost());
+        $this->assertSame('/path', $uri->getPath());
+    }
+
+    /**
+     * Full URI with scheme must go through parse_url().
+     */
+    public function testFullUriStillParsedCorrectly(): void
+    {
+        $uri = new Uri('https://example.com/path?q=1#frag');
+
+        $this->assertSame('https', $uri->getScheme());
+        $this->assertSame('example.com', $uri->getHost());
+        $this->assertSame('/path', $uri->getPath());
+        $this->assertSame('q=1', $uri->getQuery());
+        $this->assertSame('frag', $uri->getFragment());
+    }
 }

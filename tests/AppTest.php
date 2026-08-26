@@ -8,6 +8,7 @@ use Kode\Http\App;
 use Kode\Http\Request;
 use Kode\Http\Response;
 use Kode\Http\Psr7\Factory\ServerRequestFactory;
+use Kode\Http\Routing\RouteRunner;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -165,6 +166,44 @@ final class AppTest extends TestCase
         }
     }
 
+    /**
+     * 控制器实例 worker 级缓存：同一 "Class@method" 处理器
+     * 在多次请求中复用同一个实例，不重复实例化。
+     */
+    public function testControllerInstanceCachedAcrossRequests(): void
+    {
+        $app = new App();
+        $app->get('/cached', TestCachedController::class . '@handle');
+
+        $resp1 = $app->handle($this->request('GET', 'http://x.com/cached'));
+        $resp2 = $app->handle($this->request('GET', 'http://x.com/cached'));
+
+        $this->assertSame(200, $resp1->getStatusCode());
+        $this->assertSame(200, $resp2->getStatusCode());
+
+        // 两次请求应复用同一控制器实例
+        $this->assertSame(1, TestCachedController::$constructCount,
+            '控制器应只实例化一次，后续请求复用缓存实例');
+    }
+
+    /**
+     * invoke() 路径同样受益于实例缓存。
+     */
+    public function testInvokeReusesCachedInstance(): void
+    {
+        $request = $this->request('GET', 'http://x.com/test');
+
+        // 第一次调用 invoke
+        RouteRunner::invoke(TestCachedController::class . '@handle', $request, []);
+        $countAfterFirst = TestCachedController::$constructCount;
+
+        // 第二次调用 invoke — 不应再次实例化
+        RouteRunner::invoke(TestCachedController::class . '@handle', $request, []);
+
+        $this->assertSame($countAfterFirst, TestCachedController::$constructCount,
+            'invoke() 第二次调用应复用缓存实例');
+    }
+
     private function buildFinalHandler(): RequestHandlerInterface
     {
         return new class implements RequestHandlerInterface {
@@ -173,5 +212,23 @@ final class AppTest extends TestCase
                 return new \Kode\Http\Psr7\Message\Response(200, [], \Kode\Http\Psr7\Stream::create('ok'));
             }
         };
+    }
+}
+
+/**
+ * 测试用无状态控制器：计数构造次数以验证实例缓存。
+ */
+class TestCachedController
+{
+    public static int $constructCount = 0;
+
+    public function __construct()
+    {
+        ++self::$constructCount;
+    }
+
+    public function handle(ServerRequestInterface $request): ResponseInterface
+    {
+        return Response::json(['ok' => true]);
     }
 }
