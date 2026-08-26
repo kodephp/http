@@ -57,6 +57,23 @@ final class RouteRunner implements RequestHandlerInterface
      */
     private static array $instanceCache = [];
 
+    /**
+     * 已解析的 callable 缓存（按 handler 键索引，worker 级复用）。
+     *
+     * `$instanceCache` 只消除了 `new $class()` 分配，但 `toCallable()` 每请求
+     * 仍需做 `str_contains` + `explode` + 新建 `[instance, method]` 数组。
+     * 本缓存将解析后的 callable 本身按 handler 键缓存：
+     * - `"Class@method"` → `[cached_instance, "method"]`
+     * - `"InvokableClass"` → `cached_instance`
+     * - `[class, method]` → `[cached_instance, method]`（键 `"class::method"`）
+     *
+     * 闭包处理器不缓存（已是 callable，直接返回）。
+     * 对象数组 `[object, method]` 不缓存（`is_string($handler[0])` 守卫排除）。
+     *
+     * @var array<string, callable>
+     */
+    private static array $callableCache = [];
+
     public function __construct(private readonly Router $router)
     {
     }
@@ -194,7 +211,15 @@ final class RouteRunner implements RequestHandlerInterface
     }
 
     /**
-     * 将各种形态的处理器解析为可调用对象
+     * 将各种形态的处理器解析为可调用对象。
+     *
+     * 热路径优化：字符串和 `[class, method]` 数组处理器在 worker 生命周期内
+     * 只解析一次，结果（含已缓存的控制器实例）缓存在 {@see $callableCache}。
+     * 后续 `invoke()` / `compileRoute()` 直接命中缓存，跳过每请求
+     * `str_contains` + `explode` + `class_exists` + 数组分配。
+     *
+     * 闭包与对象数组不缓存——闭包已是 callable（直接返回），对象数组
+     * 的对象引用可能在注册期后变更。
      */
     private static function toCallable(mixed $handler): callable
     {
@@ -202,21 +227,16 @@ final class RouteRunner implements RequestHandlerInterface
             return $handler;
         }
 
-        if (is_string($handler) && str_contains($handler, '@')) {
-            [$class, $method] = explode('@', $handler, 2);
-            return [self::resolveClass($class), $method];
+        // 字符串处理器（"Class@method" / "InvokableClass" / 函数名）：
+        // 按 handler 字符串缓存解析结果
+        if (is_string($handler)) {
+            return self::$callableCache[$handler] ??= self::resolveStringHandler($handler);
         }
 
+        // 数组 [class, method]：按 "class::method" 键缓存
         if (is_array($handler) && count($handler) === 2 && is_string($handler[0])) {
-            return [self::resolveClass($handler[0]), $handler[1]];
-        }
-
-        if (is_string($handler) && class_exists($handler)) {
-            $instance = self::resolveClass($handler);
-            if (!is_callable($instance)) {
-                throw new \InvalidArgumentException(sprintf('路由处理器 %s 缺少 __invoke 方法', $handler));
-            }
-            return $instance;
+            $key = $handler[0] . '::' . $handler[1];
+            return self::$callableCache[$key] ??= [self::resolveClass($handler[0]), $handler[1]];
         }
 
         if (is_callable($handler)) {
@@ -224,6 +244,32 @@ final class RouteRunner implements RequestHandlerInterface
         }
 
         throw new \InvalidArgumentException('无法解析的路由处理器');
+    }
+
+    /**
+     * 解析字符串处理器（仅在 callable 缓存未命中时执行）。
+     */
+    private static function resolveStringHandler(string $handler): callable
+    {
+        if (str_contains($handler, '@')) {
+            [$class, $method] = explode('@', $handler, 2);
+            return [self::resolveClass($class), $method];
+        }
+
+        if (class_exists($handler)) {
+            $instance = self::resolveClass($handler);
+            if (!is_callable($instance)) {
+                throw new \InvalidArgumentException(sprintf('路由处理器 %s 缺少 __invoke 方法', $handler));
+            }
+            return $instance;
+        }
+
+        // 纯函数名（如 'strlen'）
+        if (is_callable($handler)) {
+            return $handler;
+        }
+
+        throw new \InvalidArgumentException(sprintf('无法解析的路由处理器: %s', $handler));
     }
 
     /**

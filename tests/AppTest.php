@@ -204,6 +204,40 @@ final class AppTest extends TestCase
             'invoke() 第二次调用应复用缓存实例');
     }
 
+    /**
+     * callable 缓存：invoke() 多次调用同一 handler 返回同一 callable。
+     */
+    public function testInvokeReturnsConsistentResults(): void
+    {
+        $request = $this->request('GET', 'http://x.com/test');
+
+        $result1 = RouteRunner::invoke(TestCallableCacheController::class . '@handle', $request, []);
+        $result2 = RouteRunner::invoke(TestCallableCacheController::class . '@handle', $request, []);
+
+        $this->assertSame(
+            $result1['instance_id'],
+            $result2['instance_id'],
+            '两次 invoke() 应复用同一控制器实例（callable 缓存生效）'
+        );
+    }
+
+    /**
+     * callable 缓存对数组 [class, method] 格式同样生效。
+     */
+    public function testInvokeArrayHandlerCachesCallable(): void
+    {
+        $request = $this->request('GET', 'http://x.com/test');
+
+        $result1 = RouteRunner::invoke([TestCallableCacheController::class, 'handle'], $request, []);
+        $result2 = RouteRunner::invoke([TestCallableCacheController::class, 'handle'], $request, []);
+
+        $this->assertSame(
+            $result1['instance_id'],
+            $result2['instance_id'],
+            '数组 [class, method] handler 也应复用缓存实例'
+        );
+    }
+
     private function buildFinalHandler(): RequestHandlerInterface
     {
         return new class implements RequestHandlerInterface {
@@ -230,5 +264,16 @@ class TestCachedController
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
         return Response::json(['ok' => true]);
+    }
+}
+
+/**
+ * 测试用控制器：返回实例 ID 以验证 callable 缓存。
+ */
+class TestCallableCacheController
+{
+    public function handle(ServerRequestInterface $request): array
+    {
+        return ['instance_id' => spl_object_id($this)];
     }
 }
