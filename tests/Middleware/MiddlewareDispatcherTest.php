@@ -163,4 +163,43 @@ class MiddlewareDispatcherTest extends TestCase
 
         $this->assertSame($dispatcher, $result);
     }
+
+    public function testRemoveMiddlewareByClass(): void
+    {
+        $handler = new class implements RequestHandlerInterface {
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                return new Response(200, [], Stream::create('Final'));
+            }
+        };
+
+        $first = new CallableMiddleware(fn($r, $h) => $h->handle($r));
+        $second = new CallableMiddleware(fn($r, $h) => $h->handle($r));
+
+        $dispatcher = new MiddlewareDispatcher($handler);
+        $dispatcher->pipe($first)->pipe($second);
+
+        // handle 一次使编译缓存生效，再移除必须重置编译，否则行为不变。
+        $dispatcher->dispatch(new ServerRequest('GET', '/'));
+        $this->assertTrue($dispatcher->removeMiddleware(CallableMiddleware::class));
+        $this->assertSame([$second], $dispatcher->getMiddlewares());
+
+        $response = $dispatcher->dispatch(new ServerRequest('GET', '/'));
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertTrue($dispatcher->removeMiddleware($second));
+        $this->assertSame([], $dispatcher->getMiddlewares());
+    }
+
+    public function testRemoveMiddlewareAbsentReturnsFalse(): void
+    {
+        $handler = new class implements RequestHandlerInterface {
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                return new Response(200);
+            }
+        };
+
+        $dispatcher = new MiddlewareDispatcher($handler);
+        $this->assertFalse($dispatcher->removeMiddleware(CallableMiddleware::class));
+    }
 }

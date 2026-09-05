@@ -182,4 +182,28 @@ class MiddlewarePipeline implements RequestHandlerInterface
         $clone->compiled = null;
         return $clone;
     }
+
+    /**
+     * 移除首个命中的中间件（命中后编译缓存重置，下次 handle() 重编）。
+     *
+     * 用途：框架用自家异常中间件替换本库默认 JsonErrorHandlerMiddleware 时，
+     * 把默认值从管线摘除——省一层帧开销，且异常真正走框架的结构化路径
+     * （否则内层默认处理器先行捕获，外层框架处理器恒不可达）。
+     *
+     * @param MiddlewareInterface|class-string<MiddlewareInterface> $target 同一实例或类名
+     */
+    public function removeMiddleware(MiddlewareInterface|string $target): bool
+    {
+        foreach ($this->middlewares as $i => $middleware) {
+            $hit = is_string($target) ? $middleware instanceof $target : $middleware === $target;
+            if ($hit) {
+                array_splice($this->middlewares, $i, 1);
+                $this->compiled = null;
+
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
