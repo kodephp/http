@@ -68,6 +68,16 @@ class Request
     /** 本轮请求是否已写入链路追踪上下文（供 clear 按需清理，热路径省 4 次 Context::delete） */
     private static bool $traceWritten = false;
 
+    /**
+     * 是否同步入站链路头到追踪上下文（默认开）。
+     *
+     * 关闭后 setRequest() 跳过 4× 链路头嗅探（约 0.8µs/请求），供追踪已全局关闭
+     * 的部署（框架在 observability.tracing.enabled=false 时自动关闭）：
+     * Tracer / TraceMiddleware / 日志关联均不依赖此次同步（各自独立），
+     * RequestId 中间件直接读请求头亦不受影响。
+     */
+    private static bool $traceSyncEnabled = true;
+
     /** @var list<string> 代理来源 IP 头，按优先级排列 */
     public const array IP_HEADERS = [
         'X-Forwarded-For',
@@ -84,11 +94,21 @@ class Request
     {
         if (class_exists(Context::class)) {
             Context::set(self::CONTEXT_KEY, $request);
-            self::syncTraceContext($request);
+            if (self::$traceSyncEnabled) {
+                self::syncTraceContext($request);
+            }
             return;
         }
 
         self::$fallback = $request;
+    }
+
+    /**
+     * 开关入站链路头同步（见 $traceSyncEnabled）。
+     */
+    public static function setTraceSyncEnabled(bool $enabled): void
+    {
+        self::$traceSyncEnabled = $enabled;
     }
 
     /**

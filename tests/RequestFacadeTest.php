@@ -114,4 +114,25 @@ final class RequestFacadeTest extends TestCase
         $this->assertSame('POST', Request::method());
         $this->assertSame('/path', Request::path());
     }
+
+    public function testTraceSyncKillSwitch(): void
+    {
+        // 默认开：入站链路头同步进追踪上下文。
+        $request = new ServerRequest('GET', 'http://x.com/ping', [], ['X-Trace-Id' => 'trace-123']);
+        Request::setRequest($request);
+        $this->assertSame('trace-123', \Kode\Context\Context::get(\Kode\Context\Context::TRACE_ID));
+        Request::clear();
+
+        // 关闭后跳过嗅探与写入（追踪全局关闭部署的热路径优化）。
+        Request::setTraceSyncEnabled(false);
+        try {
+            Request::setRequest($request);
+            $this->assertNull(\Kode\Context\Context::get(\Kode\Context\Context::TRACE_ID));
+            // 请求本体仍正常预置（门面不受开关影响）。
+            $this->assertSame($request, Request::getRequest());
+        } finally {
+            Request::setTraceSyncEnabled(true);
+            Request::clear();
+        }
+    }
 }
