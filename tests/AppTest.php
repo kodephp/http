@@ -247,6 +247,60 @@ final class AppTest extends TestCase
             }
         };
     }
+
+    public function testStaticRouteFacadeIdentityAcrossMiddleware(): void
+    {
+        // 非 bare 栈下 App::handle 已预置同一实例；RouteRunner 须复用而非重复写入。
+        // 语义锁死：中间件内与处理器内经 facade 读到的是同一对象。
+        $app = new App();
+        $seenInMiddleware = null;
+        $seenInHandler = null;
+        $app->use(static function (ServerRequestInterface $req, RequestHandlerInterface $next) use (&$seenInMiddleware): ResponseInterface {
+            $seenInMiddleware = Request::getRequest();
+            return $next->handle($req);
+        });
+        $app->get('/ping', static function () use (&$seenInHandler): ResponseInterface {
+            $seenInHandler = Request::getRequest();
+            return Response::json(['pong' => true]);
+        });
+
+        $resp = $app->handle($this->request('GET', 'http://x.com/ping'));
+
+        $this->assertSame(200, $resp->getStatusCode());
+        $this->assertNotNull($seenInMiddleware);
+        $this->assertNotNull($seenInHandler);
+        $this->assertSame($seenInMiddleware, $seenInHandler, '静态路由：facade 实例在中间件与处理器间必须同一');
+    }
+
+    public function testParamRouteFacadeCarriesAttributes(): void
+    {
+        // 有参路由经 withAttribute 克隆出新实例，facade 必须指向带参数的新实例。
+        $app = new App();
+        $app->get('/users/{id:\d+}', static fn() => Response::json(['id' => Request::getRequest()?->getAttribute('id')]));
+
+        $resp = $app->handle($this->request('GET', 'http://x.com/users/42'));
+
+        $this->assertSame(200, $resp->getStatusCode());
+        $this->assertJsonStringEqualsJsonString('{"id":"42"}', (string) $resp->getBody());
+    }
+
+    public function testNotFoundBranchSyncsFacade(): void
+    {
+        // bare 栈下 App 层跳过预置，404 分支仍须保证 facade 可用（在处理器内捕获，
+        // handle 返回后 App::handle 的 finally 已 clear，直接断言必为 null）。
+        $app = new App();
+        $seenInNotFound = null;
+        $app->get('/ping', fn() => Response::json([]));
+        $app->notFound(static function (ServerRequestInterface $req) use (&$seenInNotFound): ResponseInterface {
+            $seenInNotFound = Request::getRequest();
+            return Response::json(['code' => 'E1004'])->status(404);
+        });
+
+        $resp = $app->handle($this->request('GET', 'http://x.com/nope'));
+
+        $this->assertSame(404, $resp->getStatusCode());
+        $this->assertNotNull($seenInNotFound, '404 分支须同步 facade');
+    }
 }
 
 /**

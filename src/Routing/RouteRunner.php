@@ -103,13 +103,13 @@ final class RouteRunner implements RequestHandlerInterface
         if ($result->status === RouteResult::NOT_FOUND) {
             // 保持 facade 语义：App 层在「无用户中间件」时不再预置请求，
             // 404/405 分支在此统一写入，行为与旧版（App 层预置）完全等价。
-            Request::setRequest($request);
+            self::syncRequest($request);
 
             return $this->handleNotFound($request);
         }
 
         if ($result->status === RouteResult::METHOD_NOT_ALLOWED) {
-            Request::setRequest($request);
+            self::syncRequest($request);
 
             return $this->handleMethodNotAllowed($request, $result->allowedMethods);
         }
@@ -128,9 +128,23 @@ final class RouteRunner implements RequestHandlerInterface
                 ->withAttribute('_route_params', $result->params);
         }
 
-        Request::setRequest($request);
+        self::syncRequest($request);
 
         return $this->dispatchRoute($route, $request);
+    }
+
+    /**
+     * 幂等写入当前请求（消除 App::handle 与本执行器的双重写入）。
+     *
+     * 非 bare 全局栈下 App::handle 已为中间件预置同一实例；本执行器拿到的是
+     * 同一对象时直接复用，跳过重复的 Context::set + 链路头嗅探（约 0.5µs/请求）。
+     * withAttribute 克隆出新实例 / 中间件替换过请求时恒为不等，照常写入，语义不变。
+     */
+    private static function syncRequest(ServerRequestInterface $request): void
+    {
+        if (Request::getRequest() !== $request) {
+            Request::setRequest($request);
+        }
     }
 
     /**
