@@ -43,16 +43,24 @@ class RateLimitMiddleware implements MiddlewareInterface
     /** @var array 客户端请求记录存储 */
     private array $storage = [];
 
+    /** @var list<string> 受信代理网段（精确 IP 或 CIDR，'*'=信任一切直连）；未命中时忽略转发头 */
+    private array $trustedProxies;
+
+    /** @var int 常驻进程内存键上限，超出先清窗口外旧记录 */
+    private const MAX_TRACKED_CLIENTS = 50_000;
+
     /**
      * 构造函数
      *
      * @param int $maxRequests 时间窗口内允许的最大请求数
      * @param int $windowSeconds 时间窗口大小（秒）
+     * @param list<string> $trustedProxies 仅当直连地址（REMOTE_ADDR）属于这些网段时才采信 X-Forwarded-For
      */
-    public function __construct(int $maxRequests = 60, int $windowSeconds = 60)
+    public function __construct(int $maxRequests = 60, int $windowSeconds = 60, array $trustedProxies = [])
     {
         $this->maxRequests = $maxRequests;
         $this->windowSeconds = $windowSeconds;
+        $this->trustedProxies = array_values($trustedProxies);
     }
 
     /**
@@ -67,8 +75,19 @@ class RateLimitMiddleware implements MiddlewareInterface
         $key = $this->getClientKey($request);
         $now = time();
 
-        // 初始化客户端记录
+        // 初始化客户端记录（常驻进程防无界增长，超上限先淘汰窗口外的键）
         if (!isset($this->storage[$key])) {
+            if (count($this->storage) >= self::MAX_TRACKED_CLIENTS) {
+                $cutoff = $now - $this->windowSeconds;
+                foreach ($this->storage as $k => $d) {
+                    if (($d['blocked_until'] ?? 0) < $cutoff && ($d['requests'] === [] || max($d['requests']) < $cutoff)) {
+                        unset($this->storage[$k]);
+                    }
+                }
+                while (count($this->storage) >= self::MAX_TRACKED_CLIENTS) {
+                    unset($this->storage[array_key_first($this->storage)]);
+                }
+            }
             $this->storage[$key] = ['requests' => [], 'blocked_until' => 0];
         }
 
@@ -114,18 +133,83 @@ class RateLimitMiddleware implements MiddlewareInterface
     /**
      * 获取客户端唯一标识键
      *
-     * 优先使用 X-Forwarded-For（代理环境），其次 X-Real-IP，最后使用默认值。
+     * 默认只采信直连地址 REMOTE_ADDR；仅当直连方在受信代理网段内时，
+     * 才从 X-Forwarded-For 从右往左取第一个非受信地址（防伪造头刷键绕限）。
      *
      * @param ServerRequestInterface $request HTTP 请求
      * @return string 客户端键（MD5 哈希）
      */
     private function getClientKey(ServerRequestInterface $request): string
     {
-        $ip = $request->getHeaderLine('X-Forwarded-For')
-            ?: $request->getHeaderLine('X-Real-IP')
-            ?: 'unknown';
+        $params = $request->getServerParams();
+        $remote = (string) ($params['REMOTE_ADDR'] ?? '');
+        $ip = $remote;
+
+        if ($remote !== '' && $this->isTrustedProxy($remote)) {
+            $xff = $request->getHeaderLine('X-Forwarded-For');
+            if ($xff !== '') {
+                $chain = array_values(array_filter(array_map('trim', explode(',', $xff)), static fn ($v) => $v !== ''));
+                foreach (array_reverse($chain) as $hop) {
+                    if (!$this->isTrustedProxy($hop)) {
+                        $ip = $hop;
+                        break;
+                    }
+                }
+            } else {
+                $real = trim($request->getHeaderLine('X-Real-IP'));
+                if ($real !== '') {
+                    $ip = $real;
+                }
+            }
+        }
+
+        if ($ip === '') {
+            $ip = 'unknown';
+        }
 
         return md5($ip);
+    }
+
+    /**
+     * 直连/跳点是否命中受信网段：'*'、精确 IP 或 CIDR（v4/v6）。
+     */
+    private function isTrustedProxy(string $ip): bool
+    {
+        foreach ($this->trustedProxies as $rule) {
+            if ($rule === '*') {
+                return true;
+            }
+            if (str_contains($rule, '/')) {
+                [$subnet, $bits] = explode('/', $rule, 2);
+                $a = @inet_pton($ip);
+                $b = @inet_pton($subnet);
+                if ($a === false || $b === false || strlen($a) !== strlen($b)) {
+                    continue;
+                }
+                $bits = (int) $bits;
+                $total = strlen($b) * 8;
+                if ($bits < 0 || $bits > $total) {
+                    continue;
+                }
+                $full = intdiv($bits, 8);
+                $rem = $bits % 8;
+                if ($full > 0 && substr($a, 0, $full) !== substr($b, 0, $full)) {
+                    continue;
+                }
+                if ($rem > 0) {
+                    $mask = (0xFF << (8 - $rem)) & 0xFF;
+                    if ((ord($a[$full]) & $mask) !== (ord($b[$full]) & $mask)) {
+                        continue;
+                    }
+                }
+                return true;
+            }
+            if (strcasecmp($rule, $ip) === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

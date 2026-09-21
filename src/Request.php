@@ -29,21 +29,13 @@ use Psr\Http\Message\UploadedFileInterface;
  * Request::integer('page', 1);          // 强类型取值
  * Request::only('name', 'email');       // 字段筛选
  * Request::bearerToken();               // Authorization: Bearer xxx
- * Request::ip();                        // 客户端 IP（含代理头解析）
+ * Request::ip();                        // 客户端 IP（默认不信任代理头，可传受信 IP/CIDR 列表）
  * ```
  */
 class Request
 {
     /** @var string 上下文存储键 */
     private const string CONTEXT_KEY = '__kode_http_request';
-
-    /** kode/context 3.x 链路追踪键，随请求写入/清理 */
-    private const array TRACE_KEYS = [
-        Context::REQUEST_ID,
-        Context::TRACE_ID,
-        Context::SPAN_ID,
-        Context::CORRELATION_ID,
-    ];
 
     /** 链路追踪来源头：守卫判定与（未来）取值共用同一份真相，杜绝清单漂移 */
     private const array TRACE_HEADERS = [
@@ -125,21 +117,18 @@ class Request
     }
 
     /**
-     * 清除当前请求（请求结束时调用，避免长驻进程内存泄漏）
+     * 清除当前请求（请求边界收口，长驻进程防跨请求泄漏）
+     *
+     * kode/context 3.2 起 clear() 带作用域代数守卫，可安全作为「每个请求
+     * 结束时整体重置当前执行单元上下文」的手段：请求对象、链路键，以及
+     * 请求途中任何组件写入的瞬态键（locale / auth_user_id 等）一并回收，
+     * 杜绝下一个请求脏读上一个请求的残留。
      */
     public static function clear(): void
     {
         if (class_exists(Context::class)) {
-            Context::delete(self::CONTEXT_KEY);
-
-            // 绝大多数请求（压测/生产）不携带链路头，traceWritten 为 false 时
-            // 跳过 4 次 Context::delete（每次含执行单元解析 + WeakMap 查找，合计 ~1µs/请求）。
-            if (self::$traceWritten) {
-                foreach (self::TRACE_KEYS as $key) {
-                    Context::delete($key);
-                }
-                self::$traceWritten = false;
-            }
+            Context::clear();
+            self::$traceWritten = false;
         }
 
         self::$fallback = null;
@@ -588,11 +577,15 @@ class Request
     /**
      * 获取客户端 IP
      *
-     * 依次尝试：显式设置的 client_ip 属性 → 常见代理头 → REMOTE_ADDR。
+     * 依次尝试：显式设置的 client_ip 属性 → （受信时）代理头 → REMOTE_ADDR。
      *
-     * @param bool $trustProxy 是否信任代理头，生产环境应在网关侧收敛后再开启
+     * 默认不信任任何代理头（防 XFF 伪造）。生产环境在网关后置时传入受信网段：
+     * $trustProxy 为数组时按 XFF 链从右向左找到第一个非受信跳点作为客户端 IP；
+     * 传 true 为全信任（仅适合直连不可伪造的场景，不推荐）。
+     *
+     * @param bool|list<string> $trustProxy false=只用 REMOTE_ADDR；true=无条件信头；数组=受信 IP/CIDR 列表（支持 '*'）
      */
-    public static function ip(bool $trustProxy = true): ?string
+    public static function ip(bool|array $trustProxy = false): ?string
     {
         $request = self::getRequest();
         if ($request === null) {
@@ -604,22 +597,88 @@ class Request
             return $attribute;
         }
 
-        if ($trustProxy) {
-            foreach (self::IP_HEADERS as $header) {
-                $value = $request->getHeaderLine($header);
-                if ($value === '') {
-                    continue;
+        $remote = $request->getServerParams()['REMOTE_ADDR'] ?? null;
+        $remote = is_string($remote) && $remote !== '' ? $remote : null;
+
+        $trustList = is_array($trustProxy) ? $trustProxy : null;
+        $honorHeaders = $trustProxy === true
+            || ($trustList !== null && $remote !== null && self::isTrustedAddress($remote, $trustList));
+
+        if ($honorHeaders) {
+            $xff = $request->getHeaderLine('X-Forwarded-For');
+            if ($xff !== '') {
+                $chain = array_values(array_filter(
+                    array_map('trim', explode(',', $xff)),
+                    static fn ($v) => $v !== '' && filter_var($v, FILTER_VALIDATE_IP) !== false,
+                ));
+                if ($trustList === null) {
+                    $ip = $chain[0] ?? null;
+                } else {
+                    $ip = null;
+                    foreach (array_reverse($chain) as $hop) {
+                        if (!self::isTrustedAddress($hop, $trustList)) {
+                            $ip = $hop;
+                            break;
+                        }
+                    }
+                    $ip ??= $chain[0] ?? null; // 全链受信时取最左跳点
                 }
-                $ip = trim(explode(',', $value)[0]);
-                if (filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+                if ($ip !== null) {
+                    return $ip;
+                }
+            }
+            foreach (['X-Real-IP', 'CF-Connecting-IP', 'True-Client-IP', 'Client-IP'] as $header) {
+                $ip = trim($request->getHeaderLine($header));
+                if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) !== false) {
                     return $ip;
                 }
             }
         }
 
-        $remote = $request->getServerParams()['REMOTE_ADDR'] ?? null;
+        return $remote;
+    }
 
-        return is_string($remote) && $remote !== '' ? $remote : null;
+    /**
+     * IP 是否命中受信列表：'*'、精确匹配或 CIDR 网段（v4/v6）。
+     */
+    private static function isTrustedAddress(string $ip, array $trusted): bool
+    {
+        foreach ($trusted as $rule) {
+            if ($rule === '*') {
+                return true;
+            }
+            if (!str_contains($rule, '/')) {
+                if (strcasecmp($rule, $ip) === 0) {
+                    return true;
+                }
+                continue;
+            }
+            [$subnet, $bits] = explode('/', $rule, 2);
+            $a = @inet_pton($ip);
+            $b = @inet_pton($subnet);
+            if ($a === false || $b === false || strlen($a) !== strlen($b)) {
+                continue;
+            }
+            $bits = (int) $bits;
+            $total = strlen($b) * 8;
+            if ($bits < 0 || $bits > $total) {
+                continue;
+            }
+            $full = intdiv($bits, 8);
+            $rem = $bits % 8;
+            if ($full > 0 && substr($a, 0, $full) !== substr($b, 0, $full)) {
+                continue;
+            }
+            if ($rem > 0) {
+                $mask = (0xFF << (8 - $rem)) & 0xFF;
+                if ((ord($a[$full]) & $mask) !== (ord($b[$full]) & $mask)) {
+                    continue;
+                }
+            }
+            return true;
+        }
+
+        return false;
     }
 
     /**

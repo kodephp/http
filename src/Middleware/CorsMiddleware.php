@@ -106,15 +106,34 @@ class CorsMiddleware implements MiddlewareInterface
      */
     private function addCorsHeaders(Response $response, ServerRequestInterface $request): Response
     {
-        $origin = $request->getHeaderLine('Origin') ?: $this->config['origin'];
+        $configured = $this->config['origin'] ?? '*';
+        $allowed = is_array($configured) ? $configured : [$configured];
+        $wildcard = in_array('*', $allowed, true);
+        $credentials = !empty($this->config['credentials']);
+        $requestOrigin = $request->getHeaderLine('Origin');
 
-        // 检查 origin 是否在允许列表中
-        if (is_array($this->config['origin']) && !in_array($origin, $this->config['origin'])) {
-            $origin = $this->config['origin'][0] ?? '*';
+        // 白名单校验：数组配置时仅放行精确匹配的来源（字符串与数组同权，
+        // 此前字符串配置会原样回显任意请求 Origin）。不匹配则整体省略 CORS 头。
+        if ($requestOrigin !== '' && !$wildcard && !in_array($requestOrigin, $allowed, true)) {
+            return $response;
+        }
+
+        $echo = $requestOrigin !== '' ? $requestOrigin : ($allowed[0] ?? '*');
+        // 通配 + credentials 为规范禁止组合：回显任意来源并带凭证会泛化凭证域，
+        // 降级为纯 '*' 且不下发凭证头。
+        if ($wildcard && $credentials) {
+            $echo = '*';
+            $credentials = false;
         }
 
         // Access-Control-Allow-Origin
-        $response = $response->withHeader('Access-Control-Allow-Origin', $origin);
+        $response = $response->withHeader('Access-Control-Allow-Origin', $echo);
+
+        // 按来源回显时必须声明 Vary，防中间缓存把 A 源的响应喂给 B 源
+        if ($echo !== '*') {
+            $vary = $response->getHeaderLine('Vary');
+            $response = $response->withHeader('Vary', $vary === '' ? 'Origin' : $vary . ', Origin');
+        }
 
         // Access-Control-Allow-Methods
         $response = $response->withHeader('Access-Control-Allow-Methods', implode(', ', $this->config['methods']));
@@ -132,8 +151,8 @@ class CorsMiddleware implements MiddlewareInterface
         // Access-Control-Max-Age
         $response = $response->withHeader('Access-Control-Max-Age', (string) $this->config['max_age']);
 
-        // Access-Control-Allow-Credentials
-        if ($this->config['credentials']) {
+        // Access-Control-Allow-Credentials（通配降级场景已在上方关闭）
+        if ($credentials) {
             $response = $response->withHeader('Access-Control-Allow-Credentials', 'true');
         }
 

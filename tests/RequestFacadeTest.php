@@ -21,10 +21,10 @@ final class RequestFacadeTest extends TestCase
         Request::clear();
     }
 
-    private function make(array $query = [], array $parsed = [], string $jsonBody = '', array $headers = []): void
+    private function make(array $query = [], array $parsed = [], string $jsonBody = '', array $headers = [], array $serverParams = []): void
     {
         $body = $jsonBody === '' ? null : Stream::create($jsonBody);
-        $request = new ServerRequest('POST', 'http://x.com/path?ignore=1', [], $headers, $body);
+        $request = new ServerRequest('POST', 'http://x.com/path?ignore=1', $serverParams, $headers, $body);
         $request = $request->withQueryParams($query)->withParsedBody($parsed);
         Request::setRequest($request);
     }
@@ -84,11 +84,49 @@ final class RequestFacadeTest extends TestCase
         $this->assertNull(Request::bearerToken());
     }
 
-    public function testClientIpFromProxyHeader(): void
+    public function testClientIpIgnoresProxyHeadersByDefault(): void
     {
-        $this->make([], [], '', ['X-Forwarded-For' => '203.0.113.5, 70.41.3.18']);
+        $this->make(
+            [], [], '',
+            ['X-Forwarded-For' => '203.0.113.5, 70.41.3.18'],
+            ['REMOTE_ADDR' => '198.51.100.9'],
+        );
 
-        $this->assertSame('203.0.113.5', Request::ip());
+        $this->assertSame('198.51.100.9', Request::ip());
+    }
+
+    public function testClientIpFromProxyHeaderWithBlanketTrust(): void
+    {
+        $this->make(
+            [], [], '',
+            ['X-Forwarded-For' => '203.0.113.5, 70.41.3.18'],
+            ['REMOTE_ADDR' => '198.51.100.9'],
+        );
+
+        $this->assertSame('203.0.113.5', Request::ip(true));
+    }
+
+    public function testClientIpFromTrustedProxyChain(): void
+    {
+        $this->make(
+            [], [], '',
+            ['X-Forwarded-For' => '203.0.113.5, 10.0.0.2', 'X-Real-IP' => '203.0.113.5'],
+            ['REMOTE_ADDR' => '10.0.0.1'],
+        );
+
+        // 从右往左第一个非受信跳点即客户端
+        $this->assertSame('203.0.113.5', Request::ip(['10.0.0.0/8']));
+    }
+
+    public function testClientIpUntrustedRemoteIgnoresHeaders(): void
+    {
+        $this->make(
+            [], [], '',
+            ['X-Forwarded-For' => '203.0.113.5', 'X-Real-IP' => '203.0.113.5'],
+            ['REMOTE_ADDR' => '198.51.100.9'],
+        );
+
+        $this->assertSame('198.51.100.9', Request::ip(['10.0.0.0/8']));
     }
 
     public function testParamReadsRouteAttributes(): void
@@ -134,5 +172,22 @@ final class RequestFacadeTest extends TestCase
             Request::setTraceSyncEnabled(true);
             Request::clear();
         }
+    }
+
+    public function testClearWipesWholeRequestBoundary(): void
+    {
+        $this->make();
+
+        // 模拟请求途中组件写入的瞬态键（locale / auth_user_id / 链路键等）
+        \Kode\Context\Context::set('locale', 'zh_CN');
+        \Kode\Context\Context::set('auth_user_id', '42');
+        \Kode\Context\Context::set(\Kode\Context\Context::REQUEST_ID, 'req-9');
+
+        Request::clear();
+
+        $this->assertNull(\Kode\Context\Context::get('locale'), '请求边界必须回收所有瞬态键，杜绝跨请求泄漏');
+        $this->assertNull(\Kode\Context\Context::get('auth_user_id'));
+        $this->assertNull(\Kode\Context\Context::get(\Kode\Context\Context::REQUEST_ID));
+        $this->assertNull(Request::getRequest());
     }
 }
