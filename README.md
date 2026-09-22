@@ -239,7 +239,7 @@ $app->serve(8080);
 | `RateLimitMiddleware` | 请求限流 |
 | `JsonErrorHandlerMiddleware` | JSON 错误处理 |
 | `BodyParser` | 自动解析 JSON / 表单 / XML 请求体（PHP 8.3 `json_validate`） |
-| `RequestId` | 生成 / 复用请求 ID（`X-Request-Id`），便于链路追踪 |
+| `RequestId` | 生成 / 复用请求 ID（`X-Request-Id`），便于链路追踪；`trustClient: false` 可禁止客户端自带 ID（对外入口用，避免伪造关联键），客户端值恒剥控制字符并按 `maxLength` 截断 |
 | `ResponseTime` | 注入 `X-Response-Time` 响应耗时头（`hrtime` 纳秒计时） |
 | `Compression` | 按 `Accept-Encoding` 协商 gzip / deflate 压缩响应体 |
 | `SecurityHeaders` | 注入 X-Content-Type-Options / X-Frame-Options / Referrer-Policy 等安全头 |

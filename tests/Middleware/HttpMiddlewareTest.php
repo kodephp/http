@@ -80,6 +80,36 @@ final class HttpMiddlewareTest extends TestCase
         $this->assertSame('fixed-id-123', $resp->getHeaderLine('X-Request-Id'));
     }
 
+    public function testRequestIdWithoutTrustAlwaysGenerates(): void
+    {
+        // 对外入口不信任客户端 ID：同名头不得进入日志/审计的关联键。
+        $mw = new RequestId(trustClient: false);
+        $request = $this->request('GET', ['X-Request-Id' => 'attacker-controlled-id']);
+        $resp = $mw->process($request, $this->finalHandler());
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{24}$/', $resp->getHeaderLine('X-Request-Id'));
+    }
+
+    public function testRequestIdSanitizesClientSuppliedValue(): void
+    {
+        // 控制字符/空白剥除（日志换行伪造），超长截断到上限。
+        $mw = new RequestId(maxLength: 8);
+        $request = $this->request('GET', ['X-Request-Id' => ' ab ' . "\t" . 'cd' . str_repeat('x', 40)]);
+        $resp = $mw->process($request, $this->finalHandler());
+
+        $this->assertSame('abcdxxxx', $resp->getHeaderLine('X-Request-Id'));
+    }
+
+    public function testRequestIdGarbageClientValueFallsBackToGenerated(): void
+    {
+        // 净化后为空 ⇒ 等同没传，服务端自己生成，绝不写空头。
+        $mw = new RequestId();
+        $request = $this->request('GET', ['X-Request-Id' => " \t\n"]);
+        $resp = $mw->process($request, $this->finalHandler());
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{24}$/', $resp->getHeaderLine('X-Request-Id'));
+    }
+
     public function testRequestIdCustomHeader(): void
     {
         $mw = new RequestId(header: 'X-Trace-Id');
