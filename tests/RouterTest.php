@@ -44,8 +44,61 @@ final class RouterTest extends TestCase
         $this->assertSame(RouteResult::NOT_FOUND, $result->status);
     }
 
-    public function testMethodNotAllowedDistinguishedFromNotFound(): void
+    /**
+     * 静态（无参字面量）路由走哈希查表，**先于**任何参数路由命中，与注册先后无关。
+     *
+     * 应用侧最常见的误解就是「`/x/{id}` 注册在前会把 `/x/export` 吞掉」——
+     * 那是把动态那一层的规则错搬到了静态层。本用例把两半都钉住：字面量赢、
+     * 参数路由仍接得住自己的 URL（否则「静态优先」可能被「整张动态表都不工作」蒙过去）。
+     */
+    public function testStaticRouteWinsOverDynamicRegardlessOfOrder(): void
     {
+        $router = new Router();
+        $router->add('GET', '/x/{id}', 'dynamicFirst');
+        $router->add('GET', '/x/export', 'staticSecond');
+
+        $this->assertSame('staticSecond', $router->match('GET', '/x/export')->route?->getHandler());
+        $this->assertSame('dynamicFirst', $router->match('GET', '/x/42')->route?->getHandler());
+    }
+
+    /**
+     * 动态路由之间是**注册顺序先到先得**：贪婪约束排在前，后面注册的一切同方法参数路由都成死路由。
+     *
+     * 与上一条合起来才是完整规则——顺序只管动态这一半。`{path:.+}` 跨斜杠，
+     * 所以 `/api/{path:.+}` 会把 `/api/users/{id}` 整段吃掉。
+     */
+    public function testDynamicRoutesMatchInRegistrationOrder(): void
+    {
+        $router = new Router();
+        $router->add('GET', '/api/{path:.+}', 'greedyFirst');
+        $router->add('GET', '/api/users/{id}', 'specificSecond');
+
+        $result = $router->match('GET', '/api/users/7');
+
+        $this->assertSame('greedyFirst', $result->route?->getHandler());
+        $this->assertSame('users/7', $result->params['path']);
+    }
+
+    /**
+     * 重复注册的赢家方向：静态是「后注册覆盖」（哈希赋值），动态是「先注册赢」（数组追加）。
+     *
+     * 两者相反，且都不报错、`getRoutes()` 里两条都还在 —— 被覆盖/被吞的那一条只能靠 dispatch 发现。
+     */
+    public function testDuplicateRegistrationWinnerDiffersBetweenStaticAndDynamic(): void
+    {
+        $static = new Router();
+        $static->add('GET', '/dup', 'first');
+        $static->add('GET', '/dup', 'second');
+        $this->assertSame('second', $static->match('GET', '/dup')->route?->getHandler());
+        $this->assertCount(2, $static->getRoutes(), '被覆盖的那条仍然列在路由表里，所以清单看不出问题');
+
+        $dynamic = new Router();
+        $dynamic->add('GET', '/d/{a}', 'first');
+        $dynamic->add('GET', '/d/{b}', 'second');
+        $this->assertSame('first', $dynamic->match('GET', '/d/1')->route?->getHandler());
+    }
+
+    public function testMethodNotAllowedDistinguishedFromNotFound(): void    {
         $router = new Router();
         $router->add(['GET'], '/ping', fn() => null);
 

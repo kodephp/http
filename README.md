@@ -208,6 +208,30 @@ $app->any('/api/health', fn() => Response::success());
 $app->serve(8080);
 ```
 
+### 匹配优先级（`Router::doMatch()`，注册顺序只管到一半的路由）
+
+三步，顺序固定：
+
+1. **静态查表**：`isset($this->static[$method][$path])` —— 无 `{param}` 的字面量路由以完整
+   pattern 为键存进哈希表，**命中即返回，与注册先后完全无关**。
+   所以 `/api/users/{id}` 注册在 `/api/users/export` 之前，也不会把后者吞掉。
+2. **动态按序遍历**：`foreach ($this->dynamic[$method])` 取**第一个** `match()` 成功者 ——
+   这里注册顺序就是优先级。贪婪约束（`{path:.+}` 跨斜杠）排在前面时，
+   后面注册的**一切**同方法参数路由都变成注册了却永远匹配不到的死路由：
+   不报错、`route:list` 照常列出。兜底/SPA fallback 一类必须最后注册。
+3. 路径能被别的方法匹配 → 405（带 `Allow`），否则 404。
+
+第 1、2 步的存储方式不同，导致**重复注册的赢家方向相反**：
+
+| 形状 | 存储 | 同 pattern + 同方法重复注册时 |
+|------|------|------------------------------|
+| 静态（无参） | `$static[$method][$pattern] = $route`（赋值） | **后注册的覆盖前者**，前者当场变死路由 |
+| 动态（含参） | `$dynamic[$method][] = $route`（追加） | **先注册的赢**，后者只在被前者的正则放过时才轮到 |
+
+「先到先得」与「后到覆盖」各自只对一半成立，是这条线最容易写错注释的地方：
+应用侧曾出现「字面量必须注册在 `{key}` 之前，否则被它吞掉」这种把第 2 步的结论
+搬到第 1 步的说法。判据见 `tests/RouterTest.php` 的优先级用例。
+
 ## PSR-7 消息实现
 
 | 类 | 说明 |
@@ -459,6 +483,8 @@ kode/http
 
 ## 版本历史
 
+- **v3.5.3** - 文档 + 判据：把「匹配优先级」写成明文（见上文《匹配优先级》）。行为零改动，补的是**口径**：`Router::doMatch()` 是「静态哈希先查、动态按注册顺序先到先得」两层，而应用侧三处注释都把它写成「字面量必须注册在 `{param}` 之前，否则被吞」—— 那是把动态层的规则错搬到静态层，会引导人在改路由时做没有必要的挪动。新增 `tests/RouterTest` 三条判据把两半钉住（静态与顺序无关、动态之间先到先得、重复注册时静态后写覆盖 / 动态先写胜出——方向相反）。反向变异（关掉静态查表）逐条可杀。
+- **v3.5.2** - 安全：`RequestId` 中间件支持「不信任客户端请求 ID」。此前无条件复用入站 `X-Request-Id`，调用方可任意决定日志/审计里的链路关联键（伪造他人 ID、塞超长或含空白的值刷屏），框架侧 `security.request_id_allow_client` 因此是死键。新增构造参数 `trustClient`（默认 `true` 保持既有跨服务透传）与 `maxLength`（默认 128）：不信任时一律服务端生成，复用前恒先剥除控制字符与空白再按上限截断，净化后为空则回退生成。
 - **v3.5.1** - 修正版本常量漂移：`Kode::VERSION` 停在 `3.4.20`，而包已发布到 3.5.0，导致 `App::listen()` 的 dev server 横幅（`Kode\Http <VERSION> dev server: …`）与 `Kode::version()` 对外报旧版本。新增 `tests/VersionTest` 守卫常量与 composer.json 一致，杜绝再次漏改。行为无变化。
 - **v3.5.0** - 安全 + 请求边界收口。① `Request::clear()` 升级为**请求边界整体收口**：依赖 kode/context 3.2 的 `clear()`（代数守卫语义），每请求结束把当前执行单元上下文整体重置——请求对象、链路键与任何组件写入的瞬态键（`locale` / `auth_user_id` 等）一并回收，杜绝常驻 worker 跨请求脏读（含 framework lean 快路径，其 finally 本就调用 `clear()`）；`App::handle()` / 快路径零调用点改动。② `CorsMiddleware` origin 精确白名单：字符串配置不再无条件回显任意请求 Origin；通配 + credentials 非法组合降级为纯 `*` 且不下发凭证头；按来源回显自动补 `Vary: Origin`。③ `Request::ip()` 默认**不信任**任何代理头（防 XFF 伪造），`$trustProxy` 支持受信 IP/CIDR 列表并按 XFF 链从右向左取首个非受信跳点；`RateLimitMiddleware` 同步接入 `trustedProxies` 构造参数并对常驻内存键做上限淘汰。
 - **v3.4.13** - 性能：toCallable() callable 级缓存——消除 invoke() 每请求字符串解析 + 数组分配。v3.4.12 的 `$instanceCache` 只省了 `new $class()` 实例化，但 `toCallable()` 每请求仍做 `str_contains` + `explode` + 新建 `[instance, method]` 数组。新增静态 `$callableCache`：字符串处理器（`"Class@method"` / `"InvokableClass"`）按 handler 字符串缓存解析后的 callable，数组 `[class, method]` 按 `"class::method"` 键缓存——后续 `invoke()` / `compileRoute()` 直接命中缓存，跳过全部字符串操作 + `class_exists` + 数组分配。闭包不缓存（已是 callable，直接返回）。
