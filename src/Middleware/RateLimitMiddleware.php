@@ -243,7 +243,7 @@ class RateLimitMiddleware implements MiddlewareInterface
      *
      * @param string|null $key 客户端键，null 表示重置所有
      */
-    public function reset(string $key = null): void
+    public function reset(?string $key = null): void
     {
         if ($key === null) {
             $this->storage = [];

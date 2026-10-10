@@ -26,7 +26,7 @@
     ],
     "homepage": "https://github.com/kodephp/http",
     "license": "Apache-2.0",
-    "version": "3.5.3",
+    "version": "4.0.0",
     "authors": [
         {
             "name": "Kode Team",
@@ -39,9 +39,9 @@
         "docs": "https://github.com/kodephp/http/blob/main/README.md"
     },
     "require": {
-        "php": "^8.3",
-        "kode/context": "^3.2",
-        "kode/exception": "^3.0",
+        "php": "^8.4",
+        "kode/context": "^4",
+        "kode/exception": "^4",
         "psr/http-message": "^1.0|^2.0",
         "psr/http-server-handler": "^1.0",
         "psr/http-server-middleware": "^1.0",
@@ -49,11 +49,11 @@
     },
     "require-dev": {
         "guzzlehttp/psr7": "^2.1",
-        "kode/facade": "^3.2",
-        "kode/fibers": "^4.10",
-        "kode/parallel": "^1.18",
-        "kode/process": "^5.2",
-        "kode/queue": "^2.2",
+        "kode/facade": "^4",
+        "kode/fibers": "^5",
+        "kode/parallel": "^2",
+        "kode/process": "^6",
+        "kode/queue": "^3",
         "phpunit/phpunit": "^10.0|^11.0|^12.0",
         "swoole/ide-helper": "^4.15|^5.0",
         "symfony/var-dumper": "^6.0|^7.0"

@@ -6,7 +6,7 @@
 [![PSR-7/15/17](https://img.shields.io/badge/PSR-7%2F15%2F17-brightgreen)](https://www.php-fig.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange)](LICENSE)
 
-> **Kode\Http** 是一个专为 PHP 8.3+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/context`、`kode/exception`、`kode/fibers`、`kode/parallel`、`kode/process`，打造现代化全栈 PHP 应用。
+> **Kode\Http** 是一个专为 PHP 8.4+ 设计的高性能 HTTP 服务端库，完全兼容 PSR-7/PSR-15/PSR-17 标准。支持 Swoole、Workerman 等协程环境，支持**分布式部署**，深度集成 `kode/context`、`kode/exception`、`kode/fibers`、`kode/parallel`、`kode/process`，打造现代化全栈 PHP 应用。
 >
 > **设计理念**：借鉴 ThinkPHP/Laravel/webman 的简洁风格，提供 `Request`、`Response`、`App` 三大核心 API，让开发者无需心智负担即可快速构建高性能 HTTP 服务。
 
@@ -25,7 +25,7 @@
 
 | 环境 | 版本要求 |
 |------|----------|
-| PHP | >= 8.3 |
+| PHP | >= 8.4 |
 | PSR-7 | ^1.0 或 ^2.0 |
 | PSR-15 | ^1.0 |
 | PSR-17 | ^1.0 |
