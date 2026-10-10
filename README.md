@@ -2,7 +2,7 @@
 
 ## 现代化、高性能的 PHP HTTP 服务端库
 
-[![PHP Version](https://img.shields.io/badge/PHP-%5E8.3-blue)](https://www.php.net/)
+[![PHP Version](https://img.shields.io/badge/PHP-%5E8.4-blue)](https://www.php.net/)
 [![PSR-7/15/17](https://img.shields.io/badge/PSR-7%2F15%2F17-brightgreen)](https://www.php-fig.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange)](LICENSE)
 
