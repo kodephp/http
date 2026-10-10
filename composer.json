@@ -14,9 +14,6 @@
         "async",
         "middleware",
         "php8",
-        "php81",
-        "php82",
-        "php83",
         "php84",
         "php85",
         "kode",
@@ -26,7 +23,7 @@
     ],
     "homepage": "https://github.com/kodephp/http",
     "license": "Apache-2.0",
-    "version": "4.0.0",
+    "version": "4.0.1",
     "authors": [
         {
             "name": "Kode Team",
