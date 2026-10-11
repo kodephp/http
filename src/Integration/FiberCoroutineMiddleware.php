@@ -271,7 +271,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
                     return $task();
                 }
                 if (is_callable($task)) {
-                    return call_user_func($task);
+                    return $task();
                 }
                 return null;
             });

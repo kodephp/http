@@ -237,7 +237,7 @@ class ParallelMiddleware implements MiddlewareInterface
             if ($task instanceof \Closure) {
                 return $task();
             }
-            return call_user_func($task);
+            return $task();
         } catch (\Throwable $e) {
             return ['error' => $e->getMessage()];
         }
