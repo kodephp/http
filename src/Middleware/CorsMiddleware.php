@@ -189,7 +189,7 @@ class CorsMiddleware implements MiddlewareInterface
      * @param bool $credentials 是否允许携带凭证
      * @return self 支持链式调用
      */
-    public function setCredentials(bool $credentials): self
+    public function setCredentials(#[\SensitiveParameter] bool $credentials): self
     {
         $this->config['credentials'] = $credentials;
         return $this;

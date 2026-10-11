@@ -114,7 +114,7 @@ class LazyUri implements UriInterface
         return $new;
     }
 
-    public function withUserInfo(string $user, ?string $password = null): static
+    public function withUserInfo(string $user, #[\SensitiveParameter] ?string $password = null): static
     {
         $new = clone $this;
         $new->userInfo = $password !== null ? $user . ':' . $password : $user;

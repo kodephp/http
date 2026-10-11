@@ -241,7 +241,7 @@ class Uri implements UriInterface
      * @param string|null $password 密码，可选
      * @return static 新的 URI 实例
      */
-    public function withUserInfo(string $user, ?string $password = null): static
+    public function withUserInfo(string $user, #[\SensitiveParameter] ?string $password = null): static
     {
         $clone = clone $this;
         $clone->userInfo = $password !== null ? $user . ':' . $password : $user;

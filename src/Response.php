@@ -496,7 +496,7 @@ class Response extends Psr7\Message\Response
     /**
      * 添加 CORS 头
      */
-    public function withCors(?string $origin = '*', bool $credentials = false): self
+    public function withCors(?string $origin = '*', #[\SensitiveParameter] bool $credentials = false): self
     {
         $response = $this
             ->header('Access-Control-Allow-Origin', $origin ?? '*')
