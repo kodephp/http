@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Psr7\Trait;
 
+use Kode\Http\Psr7\HeaderGuard;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\StreamInterface;
 
@@ -18,7 +19,9 @@ trait RequestTrait
     protected function initializeHeaders(array $headers): void
     {
         foreach ($headers as $name => $value) {
-            $normalizedName = $this->normalizeHeaderName($name);
+            HeaderGuard::assertName((string) $name);
+            $value = HeaderGuard::scrub($value);
+            $normalizedName = $this->normalizeHeaderName((string) $name);
             if (is_array($value)) {
                 $this->headers[$name] = $value;
             } else {
@@ -64,6 +67,8 @@ trait RequestTrait
 
     public function withHeader(string $name, $value): static
     {
+        HeaderGuard::assertName($name);
+        $value = HeaderGuard::scrub($value);
         $normalizedName = $this->normalizeHeaderName($name);
 
         if (is_array($value)) {
@@ -79,6 +84,8 @@ trait RequestTrait
 
     public function withAddedHeader(string $name, $value): static
     {
+        HeaderGuard::assertName($name);
+        $value = HeaderGuard::scrub($value);
         $normalizedName = $this->normalizeHeaderName($name);
 
         if (is_array($value)) {

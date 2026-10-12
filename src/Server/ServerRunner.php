@@ -151,11 +151,19 @@ class ServerRunner
     private function emitResponse(ResponseInterface $response): void
     {
         $status = $response->getStatusCode();
-        header('HTTP/' . $response->getProtocolVersion() . ' ' . $status . ' ' . $response->getReasonPhrase());
+        header(
+            'HTTP/' . \Kode\Http\Psr7\HeaderGuard::clean($response->getProtocolVersion())
+            . ' ' . $status . ' '
+            . \Kode\Http\Psr7\HeaderGuard::clean($response->getReasonPhrase())
+        );
 
         foreach ($response->getHeaders() as $name => $values) {
             foreach ($values as $value) {
-                header($name . ': ' . $value);
+                // 发射层是信任边界：对任意 PSR-7 实现的头再做 CRLF 兜底清洗
+                header(
+                    \Kode\Http\Psr7\HeaderGuard::clean((string) $name)
+                    . ': ' . \Kode\Http\Psr7\HeaderGuard::clean((string) $value)
+                );
             }
         }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Psr7\Message;
 
+use Kode\Http\Psr7\HeaderGuard;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
@@ -174,6 +175,7 @@ class Response implements ResponseInterface
      */
     public function withStatus(int $code, string $reasonPhrase = ''): static
     {
+        HeaderGuard::assertValue($reasonPhrase);
         $this->statusCode = $code;
         $this->reasonPhrase = $reasonPhrase ?: (self::$reasonPhrases[$code] ?? '');
         return $this;
@@ -197,6 +199,7 @@ class Response implements ResponseInterface
      */
     public function withProtocolVersion(string $version): static
     {
+        HeaderGuard::assertValue($version);
         $this->protocolVersion = $version;
         return $this;
     }

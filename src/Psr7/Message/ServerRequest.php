@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Kode\Http\Psr7\Message;
 
+use Kode\Http\Psr7\HeaderGuard;
 use Kode\Http\Psr7\Uri;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
@@ -224,7 +225,7 @@ class ServerRequest implements ServerRequestInterface
      */
     public function withProtocolVersion(string $version): static
     {
-        $this->protocolVersion = $version;
+        $this->protocolVersion = (string) HeaderGuard::scrub($version);
         return $this;
     }
 

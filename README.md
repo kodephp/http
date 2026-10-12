@@ -243,6 +243,13 @@ $app->serve(8080);
 | `StringStream` | 纯内存流（v3.4.7），持有字符串直接返回、无 `fopen`/拷贝开销，`isWritable()`/`isSeekable()` 返回 false |
 | `Uri` | URI 实现，支持解析和构建 URI 各部分 |
 
+> **头名校验与注入防线（v4.0.6 起）**：写侧（响应）`withHeader` / `withAddedHeader` /
+> 构造函数按 PSR-7 要求**拒绝**非法头名（RFC 7230 token）与含 CR/LF/NUL 的头值
+> （`InvalidArgumentException`），`withStatus` 拒绝带换行的原因短语；
+> 读侧（请求头）对客户端畸形值**静默清洗**（`HeaderGuard::scrub`）而非抛错——容忍坏输入，
+> 且保证任何回显/转发不再携带 CR/LF。发射层（`App::writeResponse` / `ServerRunner::emitResponse`）
+> 对任意 PSR-7 实现的头、状态行原因短语与协议版本再做 `HeaderGuard::clean()` 兜底。
+>
 > **v3.4 起消息语义变更（契约级）**：`Request` / `Response` / `ServerRequest` 的 `with*` 方法
 > **原地修改并返回自身**（仿 webman / hyperf），不再克隆。即 `$a === $a->withHeader(...)`，
 > 且 `$a->withHeader(...)` 会改 `$a` 本身。这消除了中间件管道逐层改消息时的对象分配。
@@ -483,6 +490,7 @@ kode/http
 
 ## 版本历史
 
+- **v4.0.6** - 安全：响应头注入（HTTP splitting）双层防线。① **写入层**按 PSR-7 要求收紧——`withHeader` / `withAddedHeader` / 消息构造函数拒绝非法头名（RFC 7230 token）与含 CR/LF/NUL 的头值（抛 `InvalidArgumentException`），`withStatus` 拒绝带换行的原因短语，`withProtocolVersion` 拒绝协议版本注入；新增公共工具 `Psr7\HeaderGuard`（`assertName` / `assertValue` / `clean` / `scrub`）。② **读取层语义相反**——请求头来自客户端，构造/解析路径对畸形值静默 `scrub` 清洗（剔除 CR/LF/NUL）而非抛错，坏输入不会让请求直接 500，同时保证任何回显路径不再携带换行（既有 `RequestId` 净化语义与测试保持不变）。③ **发射层是信任边界**——`App::writeResponse` 与 `ServerRunner::emitResponse` 对任意 PSR-7 实现（含第三方对象）产出的头名、头值、状态行原因短语、协议版本统一 `clean()` 兜底。测试 291 通过 / 610 断言，新增 8 例注入回归（值/名/数组值/构造函数/原因短语/协议版本/读侧 scrub/清洗工具）。
 - **v3.5.3** - 文档 + 判据：把「匹配优先级」写成明文（见上文《匹配优先级》）。行为零改动，补的是**口径**：`Router::doMatch()` 是「静态哈希先查、动态按注册顺序先到先得」两层，而应用侧三处注释都把它写成「字面量必须注册在 `{param}` 之前，否则被吞」—— 那是把动态层的规则错搬到静态层，会引导人在改路由时做没有必要的挪动。新增 `tests/RouterTest` 三条判据把两半钉住（静态与顺序无关、动态之间先到先得、重复注册时静态后写覆盖 / 动态先写胜出——方向相反）。反向变异（关掉静态查表）逐条可杀。
 - **v3.5.2** - 安全：`RequestId` 中间件支持「不信任客户端请求 ID」。此前无条件复用入站 `X-Request-Id`，调用方可任意决定日志/审计里的链路关联键（伪造他人 ID、塞超长或含空白的值刷屏），框架侧 `security.request_id_allow_client` 因此是死键。新增构造参数 `trustClient`（默认 `true` 保持既有跨服务透传）与 `maxLength`（默认 128）：不信任时一律服务端生成，复用前恒先剥除控制字符与空白再按上限截断，净化后为空则回退生成。
 - **v3.5.1** - 修正版本常量漂移：`Kode::VERSION` 停在 `3.4.20`，而包已发布到 3.5.0，导致 `App::listen()` 的 dev server 横幅（`Kode\Http <VERSION> dev server: …`）与 `Kode::version()` 对外报旧版本。新增 `tests/VersionTest` 守卫常量与 composer.json 一致，杜绝再次漏改。行为无变化。

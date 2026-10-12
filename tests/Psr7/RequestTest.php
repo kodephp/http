@@ -137,4 +137,12 @@ class RequestTest extends TestCase
         $request = new Request('GET', 'http://example.com');
         $this->assertEquals(['example.com'], $request->getHeader('Host'));
     }
+
+    public function testWithHeaderScrubsCrlfValue(): void
+    {
+        // 读侧（请求头）对畸形客户端值静默清洗而非抛错：容忍坏输入，
+        // 同时保证任何回显/转发路径都不再携带 CR/LF
+        $request = (new Request('GET', '/'))->withHeader('X-Test', "value\r\nX-Inject: 1");
+        $this->assertSame(['valueX-Inject: 1'], $request->getHeader('X-Test'));
+    }
 }

@@ -142,4 +142,46 @@ class ResponseTest extends TestCase
             $this->assertEquals($code, $response->getStatusCode());
         }
     }
+
+    public function testWithHeaderRejectsCrlfValue(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new Response())->withHeader('X-Test', "ok\r\nInjected: 1");
+    }
+
+    public function testWithHeaderRejectsInvalidName(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new Response())->withHeader('X Bad Name', 'value');
+    }
+
+    public function testWithAddedHeaderRejectsCrlfInArrayValue(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new Response())->withAddedHeader('X-Multi', ['ok', "bad\r\nX-Inject: 1"]);
+    }
+
+    public function testConstructorHeadersValidated(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new Response(200, ['X-A' => "value\r\nX-B: inject"]);
+    }
+
+    public function testWithStatusRejectsCrlfReasonPhrase(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new Response())->withStatus(200, "OK\r\nX-Inject: 1");
+    }
+
+    public function testWithProtocolVersionRejectsCrlf(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        (new Response())->withProtocolVersion("1.1\r\nX-Inject: 1");
+    }
+
+    public function testHeaderGuardCleanStripsControlChars(): void
+    {
+        $this->assertSame('ab', \Kode\Http\Psr7\HeaderGuard::clean("a\r\nb\x00"));
+        $this->assertSame('plain', \Kode\Http\Psr7\HeaderGuard::clean('plain'));
+    }
 }

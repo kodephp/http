@@ -412,7 +412,9 @@ class App implements RequestHandlerInterface
         $out = sprintf(
             "HTTP/1.1 %d %s\r\n",
             $response->getStatusCode(),
-            $response->getReasonPhrase() ?: Status::phraseOf($response->getStatusCode())
+            \Kode\Http\Psr7\HeaderGuard::clean(
+                $response->getReasonPhrase() ?: Status::phraseOf($response->getStatusCode())
+            )
         );
 
         foreach ($response->getHeaders() as $name => $values) {
@@ -420,7 +422,9 @@ class App implements RequestHandlerInterface
                 continue;
             }
             foreach ($values as $value) {
-                $out .= "{$name}: {$value}\r\n";
+                // 发射层是信任边界：对任意 PSR-7 实现的头再做 CRLF 兜底清洗
+                $out .= \Kode\Http\Psr7\HeaderGuard::clean((string) $name) . ': '
+                    . \Kode\Http\Psr7\HeaderGuard::clean((string) $value) . "\r\n";
             }
         }
 
