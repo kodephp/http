@@ -190,31 +190,15 @@ class Request
     {
         if ($request instanceof LazyHeaderAware) {
             if (!$request->isHeadersResolved()) {
-                foreach (self::TRACE_HEADERS as $header) {
-                    if ($request->peekHeader($header) !== null) {
-                        return true;
-                    }
-                }
-
-                return false;
+                return array_any(self::TRACE_HEADERS, fn($header) => $request->peekHeader($header) !== null);
             }
             // 已解析：退化通用路径（serverParams 可能含 HTTP_*，或 header 已注入）
         }
 
         $server = $request->getServerParams();
-        foreach (self::TRACE_HEADERS_SERVER as $key) {
-            if (isset($server[$key]) && $server[$key] !== '') {
-                return true;
-            }
-        }
 
-        foreach (self::TRACE_HEADERS as $header) {
-            if ($request->hasHeader($header)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(self::TRACE_HEADERS_SERVER, fn($key) => isset($server[$key]) && $server[$key] !== '')
+            || array_any(self::TRACE_HEADERS, fn($header) => $request->hasHeader($header));
     }
 
     /**

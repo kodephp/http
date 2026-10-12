@@ -97,26 +97,14 @@ final class Compression implements MiddlewareInterface
             return null;
         }
 
-        foreach (self::ENCODINGS as $encoding) {
-            if (str_contains($accept, $encoding)) {
-                return $encoding;
-            }
-        }
-
-        return null;
+        return array_find(self::ENCODINGS, fn($encoding) => str_contains($accept, $encoding));
     }
 
     private function isSkippedType(ResponseInterface $response): bool
     {
         $type = strtolower($response->getHeaderLine('Content-Type'));
 
-        foreach (self::SKIP_TYPES as $prefix) {
-            if (str_starts_with($type, $prefix)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(self::SKIP_TYPES, fn($prefix) => str_starts_with($type, $prefix));
     }
 
     /**
