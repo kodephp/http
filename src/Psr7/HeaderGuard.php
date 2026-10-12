@@ -8,9 +8,12 @@ namespace Kode\Http\Psr7;
  * HTTP 头名/头值校验与发射层清洗
  *
  * 防线分两层：
- * 1. 写入层（withHeader/withStatus/withProtocolVersion 等）：按 PSR-7 要求
- *    抛 InvalidArgumentException，拒绝非法头名（RFC 7230 token）与含
- *    CR/LF/NUL 的头值——这是响应头注入（HTTP splitting）的根因。
+ * 1. 写入层（withHeader/withStatus/withProtocolVersion 等）：非法头名
+ *    （不满足 RFC 7230 token）抛 InvalidArgumentException——这是编程错误，
+ *    fail-fast 有助于尽早暴露 bug；头值含 CR/LF/NUL 则静默压平（scrub）。
+ *    响应头值常承载用户可控数据（如 Resp::redirect($userInput)），压平既
+ *    彻底消灭响应拆分（HTTP splitting），又不让畸形输入把请求变成 500
+ *    ——与 v0.8.52 起框架承诺的安全契约一致，且与读侧（请求头）对称。
  * 2. 发射层（App::writeResponse / ServerRunner::emitResponse）：对任意
  *    PSR-7 实现（含第三方）产出的头再做一次 clean() 兜底，因为发射层
  *    是信任边界，不能假设输入一定来自本包的受校验对象。
@@ -37,9 +40,10 @@ final class HeaderGuard
     }
 
     /**
-     * 校验头值（含数组形式的多值头），非法则抛出异常
+     * 严格校验头值（含数组形式的多值头），非法则抛出异常
      *
-     * 字符串禁止 CR/LF/NUL；嵌套数组/对象拒绝；标量天然不含换行直接放行。
+     * 供需要「宁可失败也不静默修改」的调用方显式使用。默认写入层
+     * （withHeader 等）不走本方法——那里用 scrub 压平（见类注释）。
      *
      * @param mixed $value
      * @throws \InvalidArgumentException 头值含 CR/LF/NUL 或为嵌套数组/对象
@@ -76,11 +80,11 @@ final class HeaderGuard
     }
 
     /**
-     * 读侧（请求头）清洗：递归剔除字符串中的 CR/LF/NUL，其余类型原样保留
+     * 头值清洗：递归剔除字符串中的 CR/LF/NUL，其余类型原样保留
      *
-     * 请求头值来自客户端，构造/解析路径必须容忍畸形输入（如解析器宽容
-     * 产出的换行残留）：静默清洗保证后续任何回显/转发不会造成响应头注入，
-     * 又不会让畸形请求直接 500。写侧（响应头）不适用——应 assert 抛错。
+     * 读写两侧统一走此路径：请求头值来自客户端，构造/解析路径必须容忍
+     * 畸形输入（静默清洗保证回显/转发不造成注入，又不让畸形请求 500）；
+     * 响应头值可能混入用户可控数据，同样压平而非抛错（见类注释）。
      */
     public static function scrub(mixed $value): mixed
     {

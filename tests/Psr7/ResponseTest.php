@@ -143,10 +143,13 @@ class ResponseTest extends TestCase
         }
     }
 
-    public function testWithHeaderRejectsCrlfValue(): void
+    public function testWithHeaderScrubsCrlfValue(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        (new Response())->withHeader('X-Test', "ok\r\nInjected: 1");
+        // 写侧值注入压平（与读侧对称）：不抛、不产生新头行——
+        // Resp::redirect($userInput) 类用法保持可用且安全。
+        $r = (new Response())->withHeader('X-Test', "ok\r\nInjected: 1");
+        $this->assertSame(['okInjected: 1'], $r->getHeader('X-Test'));
+        $this->assertStringNotContainsString("\r", $r->getHeaderLine('X-Test'));
     }
 
     public function testWithHeaderRejectsInvalidName(): void
@@ -155,28 +158,36 @@ class ResponseTest extends TestCase
         (new Response())->withHeader('X Bad Name', 'value');
     }
 
-    public function testWithAddedHeaderRejectsCrlfInArrayValue(): void
+    public function testWithAddedHeaderScrubsCrlfInArrayValue(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        (new Response())->withAddedHeader('X-Multi', ['ok', "bad\r\nX-Inject: 1"]);
+        $r = (new Response())->withAddedHeader('X-Multi', ['ok', "bad\r\nX-Inject: 1"]);
+        $this->assertSame(['ok', 'badX-Inject: 1'], $r->getHeader('X-Multi'));
     }
 
-    public function testConstructorHeadersValidated(): void
+    public function testConstructorHeadersScrubsCrlfValue(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        new Response(200, ['X-A' => "value\r\nX-B: inject"]);
+        $r = new Response(200, ['X-A' => "value\r\nX-B: inject"]);
+        $this->assertSame(['valueX-B: inject'], $r->getHeader('X-A'));
     }
 
-    public function testWithStatusRejectsCrlfReasonPhrase(): void
+    public function testConstructorRejectsInvalidName(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        (new Response())->withStatus(200, "OK\r\nX-Inject: 1");
+        new Response(200, ['X Bad Name' => 'value']);
     }
 
-    public function testWithProtocolVersionRejectsCrlf(): void
+    public function testWithStatusScrubsCrlfReasonPhrase(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        (new Response())->withProtocolVersion("1.1\r\nX-Inject: 1");
+        $r = (new Response())->withStatus(200, "OK\r\nX-Inject: 1");
+        $this->assertStringNotContainsString("\r", $r->getReasonPhrase());
+        $this->assertStringNotContainsString("\n", $r->getReasonPhrase());
+    }
+
+    public function testWithProtocolVersionScrubsCrlf(): void
+    {
+        $r = (new Response())->withProtocolVersion("1.1\r\nX-Inject: 1");
+        $this->assertStringNotContainsString("\r", $r->getProtocolVersion());
+        $this->assertStringNotContainsString("\n", $r->getProtocolVersion());
     }
 
     public function testHeaderGuardCleanStripsControlChars(): void

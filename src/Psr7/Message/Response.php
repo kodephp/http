@@ -175,7 +175,7 @@ class Response implements ResponseInterface
      */
     public function withStatus(int $code, string $reasonPhrase = ''): static
     {
-        HeaderGuard::assertValue($reasonPhrase);
+        $reasonPhrase = (string) HeaderGuard::scrub($reasonPhrase);
         $this->statusCode = $code;
         $this->reasonPhrase = $reasonPhrase ?: (self::$reasonPhrases[$code] ?? '');
         return $this;
@@ -199,7 +199,7 @@ class Response implements ResponseInterface
      */
     public function withProtocolVersion(string $version): static
     {
-        HeaderGuard::assertValue($version);
+        $version = (string) HeaderGuard::scrub($version);
         $this->protocolVersion = $version;
         return $this;
     }

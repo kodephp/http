@@ -20,7 +20,7 @@ trait ResponseTrait
     {
         foreach ($headers as $name => $value) {
             HeaderGuard::assertName((string) $name);
-            HeaderGuard::assertValue($value);
+            $value = HeaderGuard::scrub($value);
             $normalizedName = $this->normalizeHeaderName((string) $name);
             if (is_array($value)) {
                 $this->headers[$name] = $value;
@@ -57,7 +57,7 @@ trait ResponseTrait
     public function withHeader(string $name, $value): static
     {
         HeaderGuard::assertName($name);
-        HeaderGuard::assertValue($value);
+        $value = HeaderGuard::scrub($value);
         $normalizedName = $this->normalizeHeaderName($name);
 
         if (is_array($value)) {
@@ -74,7 +74,7 @@ trait ResponseTrait
     public function withAddedHeader(string $name, $value): static
     {
         HeaderGuard::assertName($name);
-        HeaderGuard::assertValue($value);
+        $value = HeaderGuard::scrub($value);
         $normalizedName = $this->normalizeHeaderName($name);
 
         if (is_array($value)) {
