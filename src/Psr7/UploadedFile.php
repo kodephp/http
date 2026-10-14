@@ -172,16 +172,21 @@ final class UploadedFile implements UploadedFileInterface
             throw new \RuntimeException('无法写入目标文件: ' . $targetPath);
         }
 
-        $stream = $this->getStream();
-        if ($stream->isSeekable()) {
-            $stream->rewind();
+        // try/finally 确保 $stream->read()/rewind() 中途抛异常时也 fclose，
+        // 防止目标文件句柄泄漏
+        try {
+            $stream = $this->getStream();
+            if ($stream->isSeekable()) {
+                $stream->rewind();
+            }
+
+            while (!$stream->eof()) {
+                fwrite($target, $stream->read(8192));
+            }
+        } finally {
+            fclose($target);
         }
 
-        while (!$stream->eof()) {
-            fwrite($target, $stream->read(8192));
-        }
-
-        fclose($target);
         $this->moved = true;
     }
 

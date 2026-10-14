@@ -28,7 +28,7 @@ use Psr\Container\ContainerExceptionInterface;
 class Kode implements ContainerInterface
 {
     /** @var string 版本号（与 composer.json 的 version 保持同步） */
-    public const VERSION = '4.0.8';
+    public const VERSION = '4.0.9';
 
     /** @var array<string, mixed> 全局配置 */
     protected static array $config = [];
