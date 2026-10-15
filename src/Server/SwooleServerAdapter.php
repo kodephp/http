@@ -10,12 +10,12 @@ use Psr\Http\Message\ServerRequestInterface;
 
 class SwooleServerAdapter
 {
-    private $handler;
+    private \Closure $handler;
     private \Swoole\Http\Server $server;
 
     public function __construct(callable $handler)
     {
-        $this->handler = $handler;
+        $this->handler = \Closure::fromCallable($handler);
     }
 
     public function run(string $host = '0.0.0.0', int $port = 8080): void

@@ -1,0 +1,27 @@
+parameters:
+    level: 6
+    paths:
+        - src
+    # phpdoc 推断在防御性写法处触发 always-true 类提示，属防御性代码而非缺陷
+    # （按 PHPStan 官方建议关闭该 certainty；tests 的类型正确性由 phpunit 把关）。
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        # 基线噪声：数组/泛型 value type 的 phpdoc 缺口，与 context/limiting 同口径
+        - '#no value type specified in iterable type \w+#'
+        - '#generic class Fiber (but )?does not specify its types#'
+        # 有意为之的三类（附注释，勿当缺陷扩散修改）：
+        # 1) 静态工厂 new static：与父类 KodeException 工厂同构，子类友好
+        -
+            identifier: new.static
+            path: src/Exception/HttpException.php
+        -
+            identifier: new.static
+            path: src/App.php
+        # 2) dev server 阻塞式 accept 循环（Ctrl+C 停机）
+        -
+            identifier: while.alwaysTrue
+            path: src/App.php
+        # 3) MiddlewarePipeline 对非接口产物的防御性兜底（Response::resolve）
+        -
+            identifier: ternary.elseUnreachable
+            path: src/Middleware/MiddlewarePipeline.php

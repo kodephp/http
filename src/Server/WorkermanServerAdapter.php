@@ -10,11 +10,11 @@ use Psr\Http\Message\ServerRequestInterface;
 
 class WorkermanServerAdapter
 {
-    private $handler;
+    private \Closure $handler;
 
     public function __construct(callable $handler)
     {
-        $this->handler = $handler;
+        $this->handler = \Closure::fromCallable($handler);
     }
 
     public function run(string $host = '0.0.0.0', int $port = 8080): void
@@ -31,7 +31,7 @@ class WorkermanServerAdapter
         \Workerman\Worker::runAll();
     }
 
-    private function convertToServerRequest($request): ServerRequestInterface
+    private function convertToServerRequest(\Workerman\Protocols\Http\Request $request): ServerRequestInterface
     {
         $method = $request->method ?? 'GET';
         $uri = new LazyUri(

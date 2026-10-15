@@ -6,6 +6,7 @@ namespace Kode\Http;
 
 use Kode\Facade\Facade;
 use Kode\Facade\FacadeProxy;
+use Kode\Http\Exception\HttpException;
 use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use Psr\Container\ContainerExceptionInterface;
@@ -21,14 +22,11 @@ use Psr\Container\ContainerExceptionInterface;
  *
  * @method static \Kode\Http\Psr7\Message\Response ok(string $body = '', array $headers = [])
  * @method static \Kode\Http\Psr7\Message\Response json(array $data, int $status = 200)
- * @method static \Kode\Http\Exception\HttpException badRequest(string $message = 'Bad Request')
- * @method static \Kode\Http\Exception\HttpException notFound(string $message = 'Not Found')
- * @method static \Kode\Http\Exception\HttpException internalError(string $message = 'Internal Server Error')
  */
 class Kode implements ContainerInterface
 {
     /** @var string 版本号（与 composer.json 的 version 保持同步） */
-    public const VERSION = '4.0.9';
+    public const VERSION = '4.1.0';
 
     /** @var array<string, mixed> 全局配置 */
     protected static array $config = [];
@@ -222,6 +220,36 @@ class Kode implements ContainerInterface
             'message' => $message,
             'code' => $code,
         ], $status);
+    }
+
+    /**
+     * 创建 400 Bad Request 异常的快捷方法
+     *
+     * @param array<string, mixed> $context 错误上下文
+     */
+    public static function badRequest(string $message = 'Bad Request', array $context = [], ?\Throwable $previous = null): HttpException
+    {
+        return HttpException::badRequest($message, $context, $previous);
+    }
+
+    /**
+     * 创建 404 Not Found 异常的快捷方法
+     *
+     * @param array<string, mixed> $context 错误上下文
+     */
+    public static function notFound(string $message = 'Not Found', array $context = [], ?\Throwable $previous = null): HttpException
+    {
+        return HttpException::notFound($message, $context, $previous);
+    }
+
+    /**
+     * 创建 500 Internal Server Error 异常的快捷方法
+     *
+     * @param array<string, mixed> $context 错误上下文
+     */
+    public static function internalError(string $message = 'Internal Server Error', array $context = [], ?\Throwable $previous = null): HttpException
+    {
+        return HttpException::internalServerError($message, $context, $previous);
     }
 
     /**

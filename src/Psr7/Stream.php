@@ -33,7 +33,7 @@ use RuntimeException;
  */
 class Stream implements StreamInterface
 {
-    /** @var resource|object 流资源或对象 */
+    /** @var resource|object|null 流资源或对象；close()/detach() 后为 null */
     private mixed $resource;
 
     /** @var int|null 流大小缓存 */
@@ -47,9 +47,6 @@ class Stream implements StreamInterface
 
     /** @var bool 是否可写 */
     private bool $writable;
-
-    /** @var string 流 URI（用于元数据） */
-    private string $uri;
 
     /** @var bool 是否拥有此流资源 */
     private bool $owned = true;
@@ -68,7 +65,6 @@ class Stream implements StreamInterface
         }
 
         $this->resource = $resource;
-        $this->uri = '';
 
         $metadata = $this->getMetadata();
         $this->seekable = ($metadata['seekable'] ?? false) && fseek($resource, 0, SEEK_CUR) === 0;
@@ -183,7 +179,6 @@ class Stream implements StreamInterface
         $resource = $this->resource;
         $this->resource = null;
         $this->size = null;
-        $this->uri = '';
         return $resource;
     }
 
@@ -203,7 +198,7 @@ class Stream implements StreamInterface
         }
 
         $stat = fstat($this->resource);
-        if ($stat !== false && isset($stat['size'])) {
+        if ($stat !== false) {
             $this->size = $stat['size'];
             return $this->size;
         }

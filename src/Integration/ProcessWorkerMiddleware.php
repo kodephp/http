@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Kode\Http\Integration;
 
-use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
 use Kode\Process\Worker\WorkerFactory;
 use Kode\Process\Worker\WorkerPool;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -148,7 +148,7 @@ class ProcessWorkerMiddleware implements MiddlewareInterface
     /**
      * 处理请求
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): Response
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $startTime = microtime(true);
         $this->stats['requests_total']++;
@@ -181,7 +181,7 @@ class ProcessWorkerMiddleware implements MiddlewareInterface
     /**
      * 添加统计信息头部
      */
-    private function addStatsHeaders(Response $response, float $startTime): Response
+    private function addStatsHeaders(ResponseInterface $response, float $startTime): ResponseInterface
     {
         $endTime = microtime(true);
         $executionTime = ($endTime - $startTime) * 1000;

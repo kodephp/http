@@ -57,9 +57,6 @@ class Request
     /** @var ServerRequestInterface|null 无上下文组件时的回退存储 */
     private static ?ServerRequestInterface $fallback = null;
 
-    /** 本轮请求是否已写入链路追踪上下文（供 clear 按需清理，热路径省 4 次 Context::delete） */
-    private static bool $traceWritten = false;
-
     /**
      * 是否同步入站链路头到追踪上下文（默认开）。
      *
@@ -128,7 +125,6 @@ class Request
     {
         if (class_exists(Context::class)) {
             Context::clear();
-            self::$traceWritten = false;
         }
 
         self::$fallback = null;
@@ -157,7 +153,6 @@ class Request
             ?: '';
         if ($requestId !== '') {
             Context::set(Context::REQUEST_ID, $requestId);
-            self::$traceWritten = true;
         }
 
         $traceId = $request->getHeaderLine('traceparent')
@@ -165,13 +160,11 @@ class Request
             ?: '';
         if ($traceId !== '') {
             Context::set(Context::TRACE_ID, $traceId);
-            self::$traceWritten = true;
         }
 
         $correlationId = $request->getHeaderLine('X-Correlation-Id') ?: '';
         if ($correlationId !== '') {
             Context::set(Context::CORRELATION_ID, $correlationId);
-            self::$traceWritten = true;
         }
     }
 

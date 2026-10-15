@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kode\Http\Middleware;
 
 use Kode\Http\Psr7\Message\Response;
+use Psr\Http\Message\ResponseInterface;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -68,9 +69,9 @@ class RateLimitMiddleware implements MiddlewareInterface
      *
      * @param ServerRequestInterface $request HTTP 请求
      * @param RequestHandlerInterface $handler 下一个处理器
-     * @return Response HTTP 响应
+     * @return ResponseInterface HTTP 响应（PSR-15 契约，可为任意 PSR-7 实现）
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): Response
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $key = $this->getClientKey($request);
         $now = time();

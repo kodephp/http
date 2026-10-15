@@ -7,6 +7,7 @@ namespace Kode\Http\Integration;
 use Kode\Exception\KodeException;
 use Kode\Fibers\Fibers;
 use Kode\Http\Psr7\Message\Response;
+use Psr\Http\Message\ResponseInterface;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -101,7 +102,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
     /**
      * 处理请求
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): Response
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         if (!$this->enabled) {
             return $handler->handle($request);
@@ -135,7 +136,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
         RequestHandlerInterface $handler,
         array $tasks,
         float $startTime
-    ): Response {
+    ): ResponseInterface {
         if (!empty($tasks)) {
             $this->stats['tasks_dispatched'] += count($tasks);
             $results = $this->executeConcurrent($tasks);
@@ -161,7 +162,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
         RequestHandlerInterface $handler,
         array $tasks,
         float $startTime
-    ): Response {
+    ): ResponseInterface {
         $this->stats['tasks_dispatched'] += count($tasks);
 
         $nodeId = $this->distributedConfig?->getNodeId() ?? 'unknown';
@@ -318,7 +319,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
     /**
      * 错误处理
      */
-    private function handleError(\Throwable $e, float $startTime): Response
+    private function handleError(\Throwable $e, float $startTime): ResponseInterface
     {
         $statusCode = 500;
         $errorCode = 'E1500';
@@ -357,7 +358,7 @@ class FiberCoroutineMiddleware implements MiddlewareInterface
     /**
      * 添加统计信息头部
      */
-    private function addStatsHeaders(Response $response, float $startTime): Response
+    private function addStatsHeaders(ResponseInterface $response, float $startTime): ResponseInterface
     {
         $executionTime = (microtime(true) - $startTime) * 1000;
 

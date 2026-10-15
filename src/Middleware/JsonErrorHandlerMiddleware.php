@@ -7,6 +7,7 @@ namespace Kode\Http\Middleware;
 use Kode\Exception\KodeException;
 use Kode\Http\Exception\HttpException;
 use Kode\Http\Psr7\Message\Response;
+use Psr\Http\Message\ResponseInterface;
 use Kode\Http\Psr7\Stream;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -41,9 +42,9 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
      *
      * @param ServerRequestInterface $request PSR-7 请求对象
      * @param RequestHandlerInterface $handler 请求处理器
-     * @return Response PSR-7 响应对象
+     * @return ResponseInterface PSR-7 响应对象（PSR-15 契约，可为任意 PSR-7 实现）
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): Response
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         try {
             $response = $handler->handle($request);
@@ -142,10 +143,10 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
     /**
      * 处理错误响应
      *
-     * @param Response $response 错误响应
-     * @return Response JSON 格式的错误响应
+     * @param ResponseInterface $response 错误响应
+     * @return ResponseInterface JSON 格式的错误响应
      */
-    private function handleErrorResponse(Response $response): Response
+    private function handleErrorResponse(ResponseInterface $response): ResponseInterface
     {
         if ($this->isJsonContentType($response)) {
             return $response;
@@ -169,10 +170,10 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
     /**
      * 确保 JSON Content-Type
      *
-     * @param Response $response 响应对象
-     * @return Response 带有 JSON Content-Type 的响应
+     * @param ResponseInterface $response 响应对象
+     * @return ResponseInterface 带有 JSON Content-Type 的响应
      */
-    private function ensureJsonContentType(Response $response): Response
+    private function ensureJsonContentType(ResponseInterface $response): ResponseInterface
     {
         if ($this->isJsonContentType($response)) {
             return $response;
@@ -184,10 +185,10 @@ class JsonErrorHandlerMiddleware implements MiddlewareInterface
     /**
      * 检查是否为 JSON Content-Type
      *
-     * @param Response $response 响应对象
+     * @param ResponseInterface $response 响应对象
      * @return bool 是否为 JSON 类型
      */
-    private function isJsonContentType(Response $response): bool
+    private function isJsonContentType(ResponseInterface $response): bool
     {
         // Kode 自研响应：轻量读内部 headers，避开 PSR-7 getHeaderLine 规范化（热路径 ~1-2µs/请求）
         if ($response instanceof \Kode\Http\Response) {

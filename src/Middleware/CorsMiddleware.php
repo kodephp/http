@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kode\Http\Middleware;
 
 use Kode\Http\Psr7\Message\Response;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -71,9 +72,9 @@ class CorsMiddleware implements MiddlewareInterface
      *
      * @param ServerRequestInterface $request HTTP 请求
      * @param RequestHandlerInterface $handler 下一个处理器
-     * @return Response HTTP 响应
+     * @return ResponseInterface HTTP 响应（PSR-15 契约，可为任意 PSR-7 实现）
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): Response
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         // 处理 OPTIONS 预检请求
         if ($request->getMethod() === 'OPTIONS') {
@@ -89,9 +90,9 @@ class CorsMiddleware implements MiddlewareInterface
      * 创建预检请求响应
      *
      * @param ServerRequestInterface $request 预检请求
-     * @return Response 预检响应（204 No Content）
+     * @return ResponseInterface 预检响应（204 No Content）
      */
-    private function createPreflightResponse(ServerRequestInterface $request): Response
+    private function createPreflightResponse(ServerRequestInterface $request): ResponseInterface
     {
         $response = new Response(204);
         return $this->addCorsHeaders($response, $request);
@@ -100,11 +101,11 @@ class CorsMiddleware implements MiddlewareInterface
     /**
      * 添加 CORS 头到响应
      *
-     * @param Response $response 原始响应
+     * @param ResponseInterface $response 原始响应
      * @param ServerRequestInterface $request 请求
-     * @return Response 添加 CORS 头后的响应
+     * @return ResponseInterface 添加 CORS 头后的响应
      */
-    private function addCorsHeaders(Response $response, ServerRequestInterface $request): Response
+    private function addCorsHeaders(ResponseInterface $response, ServerRequestInterface $request): ResponseInterface
     {
         $configured = $this->config['origin'] ?? '*';
         $allowed = is_array($configured) ? $configured : [$configured];

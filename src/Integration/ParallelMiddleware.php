@@ -9,6 +9,7 @@ use Kode\Fibers\Fibers;
 use Kode\Http\Psr7\Message\Response;
 use Kode\Http\Psr7\Stream;
 use Kode\Parallel\Parallel;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -97,7 +98,7 @@ class ParallelMiddleware implements MiddlewareInterface
     /**
      * 处理请求
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): Response
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         if (!$this->enabled) {
             return $handler->handle($request);
@@ -372,7 +373,7 @@ class ParallelMiddleware implements MiddlewareInterface
     /**
      * 添加统计信息头部
      */
-    private function addStatsHeaders(Response $response, float $startTime, int $taskCount): Response
+    private function addStatsHeaders(ResponseInterface $response, float $startTime, int $taskCount): ResponseInterface
     {
         $executionTime = (microtime(true) - $startTime) * 1000;
 
